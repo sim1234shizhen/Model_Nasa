@@ -1,0 +1,6 @@
+region,country,model,k,a,b,r2_in_sample,r2_leave_one_year_out,median_abs_pct_err_loyo,linear_mape_loyo,power_mape_loyo,corr,n_months
+Kalimantan,Indonesia,power,2.695,7.451,0.881,0.99,0.989,10.5,29.4,10.5,0.993,167
+Peninsular Malaysia,Malaysia,linear,3.453,6.17,0.862,0.958,0.957,18.5,18.5,21.9,0.979,167
+Sabah,Malaysia,power,3.378,10.387,0.731,0.909,0.897,18.4,22.5,18.4,0.962,167
+Sarawak,Malaysia,linear,2.908,6.372,0.821,0.94,0.924,21.0,21.0,23.9,0.971,167
+Sumatra,Indonesia,power,2.764,7.185,0.876,0.985,0.982,11.7,19.1,11.7,0.994,167
