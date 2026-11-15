@@ -102,6 +102,122 @@ function chartTooltip(t) {
   };
 }
 
+/* ---------- searchable dropdown ----------
+   Puts a text box over a <select>: click it to see every option, or type to
+   filter. The hidden <select> stays the source of truth: picking sets its value
+   and fires its normal "change", and any code that sets select.value (or
+   disables it, or replaces its options) updates the box too. */
+let sselSeq = 0;
+function searchableSelect(select, placeholder) {
+  if (select.dataset.searchable) return;
+  select.dataset.searchable = "1";
+  const id = "ssel-" + (++sselSeq);
+  const wrap = document.createElement("span");
+  wrap.className = "ssel";
+  wrap.dataset.for = select.id;
+  select.before(wrap);
+  const input = document.createElement("input");
+  Object.assign(input, { type: "text", autocomplete: "off", spellcheck: false, placeholder });
+  input.setAttribute("role", "combobox");
+  input.setAttribute("aria-autocomplete", "list");
+  input.setAttribute("aria-expanded", "false");
+  input.setAttribute("aria-controls", id);
+  const arrow = document.createElement("span");
+  arrow.className = "ssel-arrow"; arrow.setAttribute("aria-hidden", "true"); arrow.textContent = "▾";
+  const list = document.createElement("ul");
+  list.className = "ssel-list"; list.id = id; list.setAttribute("role", "listbox"); list.hidden = true;
+  wrap.append(input, arrow, list, select);
+  select.hidden = true; select.tabIndex = -1;
+
+  let shown = [], active = -1, typed = false;
+  const label = () => (select.selectedOptions[0]?.textContent || "").trim();
+  const options = () => [...select.options].map((o) => ({
+    value: o.value, text: o.textContent.trim(), sub: /^\s/.test(o.textContent),
+  }));
+  const syncDisabled = () => { input.disabled = select.disabled; wrap.classList.toggle("is-disabled", select.disabled); };
+
+  function render() {
+    const q = typed ? input.value.trim().toLowerCase() : "";
+    shown = options();
+    if (q) shown = shown.filter((o) => o.text.toLowerCase().includes(q))
+      .sort((a, b) => (b.text.toLowerCase().startsWith(q) - a.text.toLowerCase().startsWith(q)));
+    if (active < 0 || active >= shown.length) {
+      active = q ? (shown.length ? 0 : -1) : shown.findIndex((o) => o.value === select.value);
+    }
+    const mark = (t) => {
+      const i = q ? t.toLowerCase().indexOf(q) : -1;
+      return i < 0 ? esc(t) : esc(t.slice(0, i)) + "<mark>" + esc(t.slice(i, i + q.length)) + "</mark>" + esc(t.slice(i + q.length));
+    };
+    list.innerHTML = shown.map((o, i) => `<li role="option" id="${id}-${i}" data-i="${i}" class="${!q && o.sub ? "in-group" : ""}"
+        aria-selected="${i === active}"${o.value === select.value ? ' data-current=""' : ""}>${mark(o.text)}</li>`).join("")
+      || `<li class="ssel-empty" role="presentation">No matches</li>`;
+    list.hidden = false;
+    input.setAttribute("aria-expanded", "true");
+    if (active >= 0) {
+      input.setAttribute("aria-activedescendant", `${id}-${active}`);
+      list.querySelector(`[data-i="${active}"]`)?.scrollIntoView({ block: "nearest" });
+    }
+  }
+  function close() {
+    list.hidden = true; active = -1; typed = false;
+    input.setAttribute("aria-expanded", "false");
+    input.removeAttribute("aria-activedescendant");
+    input.value = label();
+  }
+  function pick(o) {
+    if (!o) return;
+    const changed = o.value !== select.value;
+    select.value = o.value;
+    close();
+    if (changed) select.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  const openAll = () => { typed = false; active = -1; render(); };
+
+  input.addEventListener("focus", () => { openAll(); input.select(); });
+  input.addEventListener("click", () => { if (list.hidden) openAll(); });
+  input.addEventListener("input", () => { typed = true; active = -1; render(); });
+  input.addEventListener("blur", close);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (list.hidden) { openAll(); return; }
+      if (!shown.length) return;
+      active = e.key === "ArrowDown" ? (active + 1) % shown.length : (active <= 0 ? shown.length - 1 : active - 1);
+      render();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (!list.hidden) pick(shown[active] || (shown.length === 1 ? shown[0] : null));
+    } else if (e.key === "Escape" && !list.hidden) {
+      e.preventDefault(); close();
+    }
+  });
+  // mousedown keeps focus in the box, so blur doesn't close the list before the pick
+  list.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    const li = e.target.closest("[data-i]");
+    if (li) pick(shown[+li.dataset.i]);
+  });
+  arrow.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    if (input.disabled) return;
+    if (!list.hidden) close();
+    else if (document.activeElement === input) openAll();
+    else input.focus();
+  });
+
+  // keep the box in step when code changes the select
+  const proto = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value");
+  Object.defineProperty(select, "value", {
+    configurable: true,
+    get() { return proto.get.call(this); },
+    set(v) { proto.set.call(this, v); if (list.hidden) input.value = label(); },
+  });
+  new MutationObserver(() => { syncDisabled(); if (list.hidden) input.value = label(); })
+    .observe(select, { attributes: true, attributeFilter: ["disabled"], childList: true });
+  syncDisabled();
+  input.value = label();
+}
+
 /* ---------- filters ---------- */
 function buildFilters() {
   const scope = $("#f-scope");
@@ -109,6 +225,7 @@ function buildFilters() {
   for (const r of state.regions) opts.push([r.region, `  ${r.region} (${r.country === "Malaysia" ? "MY" : "ID"})`]);
   scope.innerHTML = opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
   scope.value = state.scope;
+  searchableSelect(scope, "Type a region or country");
 
   const years = [...new Set(state.series.map((d) => d.year))];
   $("#f-year").innerHTML = years.map((y) => `<option>${y}</option>`).join("");
@@ -140,7 +257,10 @@ function buildFilters() {
   scope.addEventListener("change", () => changeScope(scope.value));
   $("#f-year").addEventListener("change", (e) => setYM(+e.target.value, state.month));
   $("#f-month").addEventListener("change", (e) => setYM(state.year, +e.target.value));
-  $("#f-sensor").addEventListener("change", (e) => { state.sensor = e.target.value; loadMap(); });
+  $("#cal-to-map").addEventListener("click", (e) => {   // calendar -> hotspot map for the selected month
+    e.preventDefault();
+    initRange().then(() => { rgMonth(state.year, state.month); location.hash = "/dashboard?section=hotspots"; });
+  });
   $("#t-raw").addEventListener("change", (e) => { state.raw = e.target.checked; renderTS(); });
   $("#t-log").addEventListener("change", (e) => { state.log = e.target.checked; renderTS(); });
   $("#calib-pick").addEventListener("change", (e) => { state.calibRegion = e.target.value; renderCalib(); });
@@ -198,13 +318,12 @@ function setYM(year, month) {
   state.year = year;
   state.month = month;
   syncFilters();
-  if (route.page !== "dashboard" || !ready) return;
-  loadDashboardSummary();
-  renderTiles();
-  tsChart?.update("none");
-  renderCal();
-  renderHist();
-  loadMap();
+  if (activeSection("dashboard", "calendar")) {
+    renderTiles();
+    tsChart?.update("none");
+    renderCal();
+  }
+  if (activeSection("dashboard", "history")) renderHist();
 }
 
 let scopeRequest = 0;
@@ -496,74 +615,13 @@ function calTip(e) {
     `<br><span class="m">${esc(d.source)}</span>`, e.clientX, e.clientY);
 }
 
-/* ---------- map ---------- */
-let map = null, baseLayer = null, cellLayer = null, mapReq = 0;
-
-function initMap() {
-  map = L.map("map", { preferCanvas: true, worldCopyJump: false, minZoom: 4, maxZoom: 11, zoomSnap: 0.25 });
-  setBasemap();
-  fitMap();
-  // re-bin when zooming changes the sensible cell size
-  map.on("zoomend", () => {
-    if (route.page === "dashboard" && cellFor(map.getZoom()) !== lastCell) loadMap();
-  });
-}
-// grid cell (degrees) that stays a few pixels wide at the current zoom
-const cellFor = (z) => (z < 5.5 ? 0.25 : z < 7 ? 0.1 : 0.05);
-let lastCell = null;
-function setBasemap() {
-  if (baseLayer) map.removeLayer(baseLayer);
-  baseLayer = addLightBasemap(map);
-}
+/* ---------- map basemap (hotspot map and forecast map) ---------- */
 function addLightBasemap(target) {
   return L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", {
     attribution: "Basemap &copy; Esri, HERE, Garmin, &copy; OpenStreetMap contributors",
     maxZoom: 16,
   }).addTo(target);
 }
-function fitMap() {
-  if (!map) return;
-  const regs = scopeRegionNames();
-  const boxes = state.regions.filter((r) => regs.includes(r.region)).map((r) => r.bbox);
-  if (!boxes.length) return;
-  const b = [Math.min(...boxes.map((x) => x[1])), Math.min(...boxes.map((x) => x[0])),
-             Math.max(...boxes.map((x) => x[3])), Math.max(...boxes.map((x) => x[2]))];
-  map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: [4, 4] });
-}
-
-async function loadMap() {
-  const id = ++mapReq;
-  const label = `${MONTHS_LONG[state.month - 1]} ${state.year}`;
-  $("#map-title").textContent = `Hotspot map · ${label}`;
-  $("#map-note").textContent = "Loading hotspots… (the first load after a server start can take about a minute)";
-  const cell = cellFor(map ? map.getZoom() : 5);
-  lastCell = cell;
-  const q = new URLSearchParams({ scope: state.scope, year: state.year, month: state.month, sensor: state.sensor, cell });
-  let d;
-  try { d = await getJSON(`/hotspots/grid?${q}`); } catch (e) {
-    if (id === mapReq) $("#map-note").textContent = `Could not load hotspots: ${e.message}`;
-    return;
-  }
-  if (id !== mapReq) return; // a newer request superseded this one
-
-  const t = tokens(), r = ramp(t.fire);
-  const max = Math.max(1, ...d.cells.map((c) => c.cell_days));
-  if (cellLayer) cellLayer.remove();
-  cellLayer = L.layerGroup(d.cells.map((c) =>
-    L.rectangle([[c.lat, c.lon], [c.lat + d.cell, c.lon + d.cell]], {
-      stroke: false, fillColor: r(Math.log1p(c.cell_days) / Math.log1p(max)), fillOpacity: 0.9,
-    }).bindTooltip(`<b>${c.cell_days} fire day${c.cell_days === 1 ? "" : "s"}</b> in this ${d.cell}° cell<br>${nf.format(c.hotspots)} ${d.sensor} hotspots · FRP ${nf.format(c.frp)} MW`, { sticky: true })
-  )).addTo(map);
-
-  const viirsNote = (state.sensor === "VIIRS" && state.year * 12 + state.month < VIIRS_START) ? " VIIRS has no data before Feb 2012; pick MODIS or Auto." : "";
-  $("#map-note").textContent = d.hotspots
-    ? `${nf.format(d.hotspots)} ${d.sensor} hotspots in ${nf.format(d.cells.length)} grid cells (${d.cell}°). Zoom in for finer cells.${viirsNote}`
-    : `No ${d.sensor} hotspots in this area in ${label}.${viirsNote}`;
-  $("#map-legend").innerHTML = d.cells.length
-    ? `<span>1 day</span><span class="bar" style="background:${gradient(t.fire)}"></span><span>${max} days burning per cell this month</span>`
-    : "";
-}
-
 /* ---------- calibration ---------- */
 let scChart = null;
 const predict = (c, m) => (c.model === "linear" ? c.k * m : c.a * Math.pow(m, c.b));
@@ -851,7 +909,126 @@ const PREP_ICONS = {
     <path class="prep-breeze" d="M34 12q4-2 6 1M36 16q4-2 7 1" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round"/></svg>`,
 };
 
+/* Hero "jump" buttons (Outlook, Prepare): scroll to a section on the same page.
+   Buttons, not #anchors, because the hash is used for page routing. */
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-jump]");
+  if (!b) return;
+  const target = document.getElementById(b.dataset.jump);
+  if (!target) return;
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  target.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  target.classList.remove("pg-flash"); void target.offsetWidth; target.classList.add("pg-flash");
+});
+
+/* "Open … in World": jump to the World map (#/explorer) showing the area picked
+   here. The Area filter is shared by every page, so the map opens on it. */
+function syncOpenWorld() {
+  const name = $("#haze-open-world-name");
+  if (!name) return;
+  const label = ($("#f-scope").selectedOptions[0]?.textContent || "All regions").trim();
+  name.textContent = state.scope === "All" ? "all regions" : label.replace(/\s*\((MY|ID)\)$/, "");
+  const btn = $("#haze-open-world");
+  if (!btn.dataset.bound) {
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", () => { location.hash = "/explorer"; });
+  }
+}
+
+/* ---------- haze history (Prepare page) ----------
+   Yearly fire activity for the selected area from the harmonized monthly series,
+   rated against the area's own typical year. Well-known regional haze episodes
+   get a short note. */
+const HAZE_EVENTS = {
+  2006: "Fires in Sumatra and Kalimantan sent thick smoke across Malaysia and Singapore in September and October.",
+  2013: "In June, smoke from Riau in Sumatra pushed Singapore's PSI to a then-record 401, and parts of Johor in Malaysia declared an emergency.",
+  2015: "The worst haze since 1997: months of peat fires in Sumatra and Kalimantan, with schools closed across Malaysia and Singapore in September and October.",
+  2019: "Fires in Sumatra and Kalimantan brought haze to Malaysia in September; Sarawak was among the hardest hit and many schools closed.",
+  2023: "An El Niño year: fires in South Sumatra and Kalimantan brought haze back to Malaysia in October.",
+};
+// These episodes were the Sumatra / Borneo haze that reached Malaysia and Singapore;
+// the notes are shown only for the areas involved.
+const HAZE_EVENT_AREAS = new Set(["All", "Malaysia", "Indonesia", "Sumatra", "Kalimantan",
+  "Peninsular Malaysia", "Sarawak", "Sabah"]);
+let hzYear = null, hzScope = null;
+
+function hazeYears() {
+  const by = new Map();
+  for (const d of state.series) {
+    if (!by.has(d.year)) by.set(d.year, []);
+    by.get(d.year).push(d);
+  }
+  const years = [...by.entries()].filter(([, ms]) => ms.length === 12)
+    .map(([year, ms]) => ({ year, months: ms.sort((a, b) => a.month - b.month), total: ms.reduce((s, d) => s + d.harmonized, 0) }));
+  const typical = median(years.map((y) => y.total));
+  for (const y of years) {
+    y.ratio = typical ? y.total / typical : 0;
+    y.level = y.ratio >= 2 ? "sev" : y.ratio >= 1.3 ? "high" : "norm";
+    y.peak = y.months.reduce((a, d) => (d.harmonized > a.harmonized ? d : a), y.months[0]);
+  }
+  return { years, typical };
+}
+
+const HZ_LEVEL = { sev: "Severe", high: "High", norm: "Normal" };
+function renderHazeHistory() {
+  const box = $("#hz-chart");
+  if (!box) return;
+  const scopeLabel = state.scope === "All" ? "all regions" : state.scope;
+  $("#hz-area").textContent = scopeLabel;
+
+  const { years, typical } = hazeYears();
+  const events = HAZE_EVENT_AREAS.has(state.scope) ? HAZE_EVENTS : {};
+  if (!years.length) { box.innerHTML = ""; $("#hz-top").innerHTML = ""; $("#hz-detail").innerHTML = ""; return; }
+  if (hzScope !== state.scope || !years.some((y) => y.year === hzYear)) {
+    hzScope = state.scope;
+    hzYear = years.reduce((a, y) => (y.total > a.total ? y : a)).year;   // start on the worst year
+  }
+
+  // worst three years
+  const worst = [...years].sort((a, b) => b.total - a.total).slice(0, 3);
+  $("#hz-top").innerHTML = `<span class="hz-top-h">Worst years</span>` + worst.map((y, i) =>
+    `<button type="button" class="hz-top-card hz-${y.level}" data-year="${y.year}" aria-pressed="${y.year === hzYear}">
+      <span class="hz-rank">${i + 1}</span><b>${y.year}</b><small>${y.ratio.toFixed(1)}× a normal year</small></button>`).join("");
+
+  // one bar per year, with the typical-year line
+  const max = Math.max(...years.map((y) => y.total));
+  box.style.setProperty("--typ", (typical / max * 200).toFixed(1) + "px");
+  box.innerHTML = `<span class="hz-typ" aria-hidden="true"><em>Normal year</em></span>` + years.map((y) =>
+    `<button type="button" class="hz-bar hz-${y.level}" data-year="${y.year}" aria-pressed="${y.year === hzYear}"
+       title="${y.year}: ${nf.format(Math.round(y.total))} fire cell-days, ${y.ratio.toFixed(1)}× a normal year (${HZ_LEVEL[y.level]})"
+       aria-label="${y.year}, ${y.ratio.toFixed(1)} times a normal year, ${HZ_LEVEL[y.level]}${events[y.year] ? ", known haze year" : ""}">
+       <span class="hz-fill" style="height:${Math.max(2, y.total / max * 100).toFixed(2)}%">${events[y.year] ? '<i class="hz-flag" aria-hidden="true"></i>' : ""}</span>
+       <span class="hz-year">${y.year}</span></button>`).join("");
+
+  // selected year
+  const y = years.find((v) => v.year === hzYear);
+  const mMax = Math.max(...y.months.map((d) => d.harmonized), 1);
+  $("#hz-detail").innerHTML = `
+    <div class="hz-detail-head">
+      <b class="hz-detail-year">${y.year}</b>
+      <span class="hz-pill hz-${y.level}">${HZ_LEVEL[y.level]}</span>
+      <span class="hz-detail-stat"><b>${y.ratio.toFixed(1)}×</b> a normal year</span>
+      <span class="hz-detail-stat"><b>${nf.format(Math.round(y.total))}</b> fire cell-days</span>
+      <span class="hz-detail-stat">Peak: <b>${MONTHS_LONG[y.peak.month - 1]}</b></span>
+    </div>
+    <div class="hz-months" aria-label="Fire activity by month in ${y.year}">${y.months.map((d) =>
+      `<span class="hz-month${d.month === y.peak.month ? " is-peak" : ""}" title="${MONTHS_LONG[d.month - 1]} ${y.year}: ${nf.format(Math.round(d.harmonized))} fire cell-days${d.anomaly != null ? `, ${d.anomaly.toFixed(1)}× a typical ${MONTHS_LONG[d.month - 1]}` : ""}">
+        <i style="height:${Math.max(3, d.harmonized / mMax * 100).toFixed(1)}%"></i><small>${MONTHS[d.month - 1][0]}</small></span>`).join("")}</div>
+    ${events[y.year] ? `<p class="hz-event"><span aria-hidden="true">⚑</span> <b>Known haze year.</b> ${esc(events[y.year])}</p>` : ""}`;
+
+  const sec = box.closest(".hz-hist");
+  if (!sec.dataset.bound) {
+    sec.dataset.bound = "1";
+    sec.addEventListener("click", (e) => {
+      const yb = e.target.closest("[data-year]");
+      if (yb) { hzYear = +yb.dataset.year; renderHazeHistory(); }
+    });
+  }
+}
+
 function renderHaze() {
+  syncOpenWorld();
+  renderHazeHistory();
   const lv = seasonLevels();
   $("#season-chips").innerHTML = lv.map((l, i) =>
     `<span class="chip ${l}" title="${l === "hi" ? "High-risk month" : l === "mid" ? "Above-average month" : "Lower-risk month"}">${MONTHS[i]}</span>`).join("");
@@ -1183,6 +1360,214 @@ function whereEvents() {
   });
 }
 
+/* ---------- Dashboard: specific dates ----------
+   /api/hotspots/range gives totals, day-by-day counts, regions and the strongest
+   15,000 detections for the map; /api/hotspots/range.csv downloads all of them. */
+let rgMap = null, rgLayer = null, rgChart = null, rgData = null, rgReq = 0, rgDates = null;
+const pad2 = (n) => String(n).padStart(2, "0");
+const isoDate = (y, m, d) => `${y}-${pad2(m)}-${pad2(d)}`;
+const lastDayOf = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+const addDays = (iso, n) => { const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const dayLabel = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+const fmtDay = (iso) => dayLabel.format(new Date(iso + "T00:00:00Z"));
+const scopeSlug = () => state.scope.replace(/[^A-Za-z0-9]+/g, "_");
+
+function rgClamp(iso) {
+  if (!rgDates) return iso;
+  return iso < rgDates.first ? rgDates.first : iso > rgDates.last ? rgDates.last : iso;
+}
+function rgSet(start, end) {
+  start = rgClamp(start); end = rgClamp(end);
+  if (start > end) [start, end] = [end, start];
+  $("#rg-start").value = start;
+  $("#rg-end").value = end;
+}
+function rgMonth(y, m) { rgSet(isoDate(y, m, 1), isoDate(y, m, lastDayOf(y, m))); }
+const rgQuery = () => new URLSearchParams({ scope: state.scope, start: $("#rg-start").value, end: $("#rg-end").value, sensor: $("#rg-sensor").value });
+
+async function initRange() {
+  if (rgDates) return;
+  try { rgDates = await getJSON("/hotspots/dates"); }
+  catch { rgDates = { first: "2003-01-01", last: "2025-12-31", viirs_from: "2012-02-01" }; }
+  for (const id of ["#rg-start", "#rg-end"]) { $(id).min = rgDates.first; $(id).max = rgDates.last; }
+  if (!$("#rg-start").value) rgMonth(state.year, state.month);
+  $("#rg-avail").textContent = `Fire detections are available from ${fmtDay(rgDates.first)} to ${fmtDay(rgDates.last)}. ` +
+    `VIIRS (finer, 375 m) is used from ${fmtDay(rgDates.viirs_from)}; MODIS before that.`;
+  $("#rg-form").addEventListener("submit", (e) => { e.preventDefault(); rgSet($("#rg-start").value, $("#rg-end").value); loadRange(); });
+  $("#rg-form").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-quick]");
+    if (!b) return;
+    const s = $("#rg-start").value || isoDate(state.year, state.month, 1);
+    if (b.dataset.quick === "day") rgSet(s, s);
+    else if (b.dataset.quick === "week") rgSet(s, addDays(s, 6));
+    else if (b.dataset.quick === "month") rgMonth(+s.slice(0, 4), +s.slice(5, 7));   // the month of the From date
+    else if (b.dataset.quick === "last30") rgSet(addDays(rgDates.last, -29), rgDates.last);
+    loadRange();
+  });
+}
+
+function renderRange() {
+  initRange().then(() => {
+    if (rgMap) rgMap.invalidateSize({ pan: false });
+    loadRange();
+  });
+}
+
+async function loadRange() {
+  const start = $("#rg-start").value, end = $("#rg-end").value;
+  if (!start || !end) return;
+  const req = ++rgReq, q = rgQuery();
+  const st = $("#rg-status");
+  st.classList.remove("err");
+  st.textContent = "Loading fire detections…";
+  let d;
+  try { d = await getJSON("/hotspots/range?" + q); }
+  catch (e) {
+    if (req !== rgReq) return;
+    st.textContent = "Could not load fire detections: " + e.message; st.classList.add("err"); return;
+  }
+  if (req !== rgReq) return;
+  rgData = { ...d, start, end };
+  const span = start === end ? fmtDay(start) : `${fmtDay(start)} – ${fmtDay(end)}`;
+  st.textContent = d.hotspots ? "" : `No fire detections in ${state.scope === "All" ? "the monitored regions" : state.scope} for ${span} (${d.sensor}).`;
+  $("#rg-results").hidden = !d.hotspots;
+  if (!d.hotspots) return;
+
+  // tiles
+  const top = d.regions[0];
+  const tiles = [
+    { k: `Fire detections · ${span}`, v: nf.format(d.hotspots), d: d.days_in_range === 1 ? `${d.sensor} · one day` : `${d.sensor} · ${d.fire_days} of ${d.days_in_range} days had fire` },
+    { k: "Fire cell-days", v: nf.format(d.cell_days), d: "5 km patches burning on a day, the site's standard unit" },
+    { k: "Busiest day", v: fmtDay(d.busiest_day.date), d: `${nf.format(d.busiest_day.hotspots)} detections that day` },
+    { k: "Most fires in", v: top.region, d: `${top.share}% of detections · peak ${fmtDay(top.peak_date)}` },
+  ];
+  $("#rg-tiles").innerHTML = tiles.map((t) =>
+    `<div class="tile"><div class="k">${esc(t.k)}</div><div class="v">${esc(t.v)}</div><div class="d">${esc(t.d)}</div></div>`).join("");
+
+  // regions
+  $("#rg-regions").innerHTML = d.regions.map((r) => `<li>
+      <span class="rg-r-name"><b>${esc(r.region)}</b><small>${nf.format(r.hotspots)} detections · ${r.fire_days} fire days · peak ${esc(fmtDay(r.peak_date))}</small></span>
+      <span class="rg-r-share">${r.share}%</span>
+      <span class="rg-r-bar" aria-hidden="true"><i style="width:${Math.max(1, r.share)}%"></i></span></li>`).join("");
+
+  // day-by-day chart, with empty days filled in so gaps show
+  const t = tokens();
+  const byDay = new Map(d.daily.map((x) => [x.date, x.hotspots]));
+  let labels = d.daily.map((x) => x.date);
+  if (d.days_in_range <= 800) { labels = []; for (let x = start; x <= end; x = addDays(x, 1)) labels.push(x); }
+  const values = labels.map((x) => byDay.get(x) || 0);
+  rgChart?.destroy();
+  rgChart = new Chart($("#rg-chart"), {
+    type: "bar",
+    data: { labels, datasets: [{ label: "Fire detections", data: values,
+      backgroundColor: labels.map((x) => (x === d.busiest_day.date ? t.fire[3] : t.fire[1])),
+      borderRadius: { topLeft: 3, topRight: 3 }, borderSkipped: "start", categoryPercentage: 0.9, barPercentage: 0.95, maxBarThickness: 48 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+      plugins: { legend: { display: false }, tooltip: { ...chartTooltip(t),
+        callbacks: { title: (it) => fmtDay(labels[it[0].dataIndex]), label: (it) => `${nf.format(it.raw)} fire detections` } } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: t.muted, maxTicksLimit: 8, maxRotation: 0,
+          callback: (v, i) => (labels.length > 366 ? labels[i].slice(0, 7) : fmtDay(labels[i]).replace(/ \d{4}$/, "")) } },
+        y: { beginAtZero: true, grid: { color: t.grid }, ticks: { color: t.muted, callback: (v) => compact(v) },
+          title: { display: true, text: "Detections per day", color: t.muted } },
+      },
+    },
+  });
+
+  // map of the detections, coloured by fire intensity (FRP)
+  if (!rgMap) {
+    rgMap = L.map("rg-map", { preferCanvas: true, minZoom: 3, maxZoom: 12, zoomSnap: 0.25 });
+    addLightBasemap(rgMap);
+  }
+  rgMap.invalidateSize({ pan: false });
+  rgLayer?.remove();
+  const col = ramp(t.fire), renderer = L.canvas({ padding: 0.3 });
+  rgLayer = L.layerGroup(d.points.map(([lat, lon, frp, day, region]) => L.circleMarker([lat, lon], {
+    renderer, radius: frp >= 100 ? 4.5 : frp >= 20 ? 3.5 : 2.6, weight: 0,
+    fillColor: col(Math.log10(frp + 1) / Math.log10(500)), fillOpacity: 0.85,
+  }).bindTooltip(`<b>${esc(fmtDay(day))}</b><br>${esc(region)} · ${lat.toFixed(3)}, ${lon.toFixed(3)}<br>Fire radiative power ${frp} MW`)))
+    .addTo(rgMap);
+  const lats = d.points.map((p) => p[0]), lons = d.points.map((p) => p[1]);
+  rgMap.fitBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], { padding: [20, 20], maxZoom: 9 });
+  $("#rg-map-note").textContent = d.points_truncated
+    ? `· showing the ${nf.format(d.points.length)} strongest of ${nf.format(d.hotspots)} detections (the CSV has all of them)`
+    : `· all ${nf.format(d.hotspots)} detections`;
+  $("#rg-legend").innerHTML = `<span>Weaker fire</span><span class="bar" style="background:${gradient(t.fire)}"></span><span>Stronger fire (fire radiative power, MW)</span>`;
+
+  // strongest 100 as a table
+  $("#rg-table").innerHTML = `<thead><tr><th>Date</th><th>Region</th><th class="num">Latitude</th><th class="num">Longitude</th><th class="num">FRP (MW)</th></tr></thead><tbody>` +
+    d.points.slice(0, 100).map(([lat, lon, frp, day, region]) =>
+      `<tr><td>${esc(day)}</td><td>${esc(region)}</td><td class="num">${lat.toFixed(4)}</td><td class="num">${lon.toFixed(4)}</td><td class="num">${frp}</td></tr>`).join("") + "</tbody>";
+
+  // full CSV straight from the server
+  const a = $("#rg-dl-points");
+  a.href = API + "/hotspots/range.csv?" + q;
+  a.download = `fire_points_${scopeSlug()}_${start}_to_${end}.csv`;
+  $("#rg-dl-count").textContent = ` · ${nf.format(d.hotspots)} rows`;
+}
+
+/* ---------- downloads: CSV tables and chart images ---------- */
+const csvCell = (v) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+const toCSV = (rows) => rows.map((r) => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
+function saveFile(name, data, type) {
+  const blob = data instanceof Blob ? data : new Blob(["﻿" + data], { type });   // BOM so Excel reads UTF-8
+  const url = URL.createObjectURL(blob), a = document.createElement("a");
+  a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+function saveChart(canvas, name, title) {
+  if (!canvas) return;
+  const pad = 24, head = title ? 34 : 0, out = document.createElement("canvas");
+  out.width = canvas.width + pad * 2; out.height = canvas.height + pad * 2 + head;
+  const g = out.getContext("2d"), t = tokens();
+  g.fillStyle = "#ffffff"; g.fillRect(0, 0, out.width, out.height);
+  if (title) { g.fillStyle = t.ink; g.font = `600 ${Math.round(16 * (window.devicePixelRatio || 1))}px "Instrument Sans", sans-serif`; g.fillText(title, pad, pad + 16); }
+  g.drawImage(canvas, pad, pad + head);
+  out.toBlob((b) => saveFile(name, b), "image/png");
+}
+const areaName = () => (state.scope === "All" ? "All regions" : state.scope);
+
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-dl]");
+  if (!b) return;
+  const kind = b.dataset.dl, slug = scopeSlug();
+  if (kind === "series-csv") {
+    saveFile(`monthly_fire_activity_${slug}.csv`, toCSV([
+      ["area", "year", "month", "fire_cell_days_viirs_scale", "modis_cell_days", "viirs_cell_days", "source", "median_same_month", "times_typical"],
+      ...state.series.map((d) => [areaName(), d.year, d.month, d.harmonized, d.modis, d.viirs, d.source, d.median, d.anomaly])]), "text/csv");
+  } else if (kind === "hist-csv") {
+    const m = +$("#h-month").value;
+    saveFile(`${MONTHS_LONG[m - 1]}_every_year_${slug}.csv`, toCSV([
+      ["area", "month", "year", "fire_cell_days", "median_2003_2025", "times_typical", "source"],
+      ...state.series.filter((d) => d.month === m).map((d) => [areaName(), MONTHS_LONG[m - 1], d.year, d.harmonized, d.median, d.anomaly, d.source])]), "text/csv");
+  } else if (kind === "ts-png") {
+    saveChart($("#ts"), `monthly_fire_activity_${slug}.png`, `Monthly fire activity · ${areaName()}`);
+  } else if (kind === "hist-png") {
+    const m = +$("#h-month").value;
+    saveChart($("#hist"), `${MONTHS_LONG[m - 1]}_every_year_${slug}.png`, `${MONTHS_LONG[m - 1]} in every year · ${areaName()}`);
+  } else if (kind === "rg-png" && rgData) {
+    saveChart($("#rg-chart"), `fire_detections_per_day_${slug}_${rgData.start}_to_${rgData.end}.png`,
+      `Fire detections per day · ${areaName()} · ${fmtDay(rgData.start)} – ${fmtDay(rgData.end)}`);
+  } else if (kind === "rg-csv" && rgData) {
+    const d = rgData;
+    saveFile(`fire_analysis_${slug}_${d.start}_to_${d.end}.csv`, toCSV([
+      ["Fire analysis", areaName(), `${d.start} to ${d.end}`, `sensor ${d.sensor}`],
+      [],
+      ["Summary", "value"],
+      ["Fire detections", d.hotspots], ["Fire cell-days", d.cell_days], ["Days in range", d.days_in_range],
+      ["Days with fire", d.fire_days], ["Total fire radiative power (MW)", d.frp_total],
+      ["Busiest day", d.busiest_day.date], ["Detections on busiest day", d.busiest_day.hotspots],
+      [],
+      ["By region", "detections", "share_percent", "fire_days", "peak_date", "total_frp_mw"],
+      ...d.regions.map((r) => [r.region, r.hotspots, r.share, r.fire_days, r.peak_date, r.frp]),
+      [],
+      ["Day by day", "detections", "total_frp_mw"],
+      ...d.daily.map((x) => [x.date, x.hotspots, x.frp]),
+    ]), "text/csv");
+  }
+});
+
 /* ---------- fire watch overview ---------- */
 const ensoFor = (year) =>
   (state.oni?.available && state.oni.latest_year >= year ? "observed" : "0");
@@ -1234,10 +1619,10 @@ function loadExplorerWatchlist() {
 /* ---------- navigation ---------- */
 const pages = {
   home: "Overview",
-  explorer: "Explorer",
+  explorer: "World",
   dashboard: "Fire Dashboard",
-  forecast: "Fire Forecast",
-  haze: "Haze Preparedness",
+  forecast: "Fire Outlook",
+  haze: "Prepare for Haze",
   data: "Data & Methods",
   docs: "Docs",
 };
@@ -1254,9 +1639,9 @@ function activeSection(page, section) {
 }
 
 const dashboardNav = $(".dashboard-nav");
-const dashboardLinks = new Map([...dashboardNav.querySelectorAll("a")].map((link) => [
+const dashboardLinks = new Map(dashboardNav ? [...dashboardNav.querySelectorAll("a")].map((link) => [
   new URLSearchParams(link.hash.split("?")[1]).get("panel"), link,
-]));
+]) : []);
 const dashboardPanels = [...document.querySelectorAll("[data-dashboard-panel]")];
 
 function dashboardPanel(name) {
@@ -1265,6 +1650,7 @@ function dashboardPanel(name) {
 
 function highlightDashboardSection(name) {
   const link = dashboardLinks.get(name);
+  if (!link || !dashboardNav) return;
   const previous = dashboardNav.querySelector("[aria-current]");
   if (link === previous) return;
   previous?.removeAttribute("aria-current");
@@ -1280,7 +1666,7 @@ function highlightDashboardSection(name) {
 
 let dashboardScrollFrame = 0;
 function trackDashboardScroll() {
-  if (route.page !== "dashboard" || dashboardScrollFrame) return;
+  if (route.page !== "dashboard" || dashboardScrollFrame || !dashboardPanels.length) return;
   dashboardScrollFrame = requestAnimationFrame(() => {
     dashboardScrollFrame = 0;
     if (route.page !== "dashboard") return;
@@ -1302,6 +1688,7 @@ function trackDashboardScroll() {
 }
 
 function jumpToDashboardPanel(panel, animate = false) {
+  if (!panel) return;
   const behavior = animate && !matchMedia("(prefers-reduced-motion: reduce)").matches ? "smooth" : "instant";
   panel.scrollIntoView({ block: "start", behavior });
   const heading = panel.querySelector("h2");
@@ -1354,8 +1741,7 @@ function updateRoute(moveFocus = false) {
   const slot = view.querySelector("[data-filters]");
   filters.hidden = !slot;
   if (slot && filters.parentElement !== slot) slot.append(filters);
-  const observed = page === "dashboard";
-  $("#f-scope").closest("label").hidden = observed;
+  const observed = page === "dashboard" && section === "calendar";   // the hotspot map has its own date picker
   const forecast = page === "forecast" || page === "haze";
   filters.querySelector("[data-timeline-filter]").hidden = page !== "explorer";
   filters.querySelectorAll("[data-observed-filter]").forEach((label) => { label.hidden = !observed; });
@@ -1399,20 +1785,17 @@ function renderView(jumpTarget = dashboardPanel(route.panel)) {
       terrainModule ??= import("./hero3d.js?v=world-cell-forecast").catch(() => { $("#hero-status").textContent = "3D view could not load"; });
       loadExplorerWatchlist();
       break;
-    case "dashboard": {
-      const through = state.series.at(-1);
-      $("#dashboard-coverage").textContent = through ? `Data through ${MONTHS_LONG[through.month - 1]} ${through.year}` : "";
-      loadDashboardSummary(jumpTarget);
-      renderTiles();
-      renderCal();
-      renderTS();
-      renderHist();
-      if (!map) initMap();
-      map.invalidateSize({ pan: false });
-      fitMap();
-      loadMap();
+    case "dashboard":
+      if (route.section === "calendar") {
+        renderTiles();
+        renderCal();
+        renderTS();
+      } else if (route.section === "history") {
+        renderHist();
+      } else {
+        renderRange();   // hotspot map for a chosen day or date range
+      }
       break;
-    }
     case "forecast":
       if (!fcMap) initFcMap();
       fcMap.invalidateSize({ pan: false });
@@ -1485,9 +1868,10 @@ $(".skip").addEventListener("click", (event) => {
 });
 window.addEventListener("scroll", trackDashboardScroll, { passive: true });
 window.addEventListener("resize", trackDashboardScroll);
-new ResizeObserver(trackDashboardScroll).observe($(".dashboard-content"));
+const dashboardContent = $(".dashboard-content");
+if (dashboardContent) new ResizeObserver(trackDashboardScroll).observe(dashboardContent);
 
-dashboardNav.addEventListener("click", (event) => {
+dashboardNav?.addEventListener("click", (event) => {
   const link = event.target.closest("a");
   if (!link || link.hash !== location.hash || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
   event.preventDefault();

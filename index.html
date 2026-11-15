@@ -1,0 +1,954 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Explore harmonized NASA fire hotspot data for Malaysia and Indonesia from 2003 to 2025.">
+  <title>Overview · BuriningView</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="styles.css?v=ui-20261115k">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="site-rail">
+    <a class="brand" href="#/" data-nav="home" aria-label="BuriningView – go to Overview" title="Go to Overview"><span class="brand-mark" aria-hidden="true"><svg class="brand-cloud" viewBox="20 18 80 76" focusable="false"><g fill="var(--mascot, #ee4a3a)"><circle cx="42" cy="53" r="20"/><circle cx="60" cy="42" r="22"/><circle cx="79" cy="54" r="19"/><circle cx="69" cy="70" r="20"/><circle cx="46" cy="71" r="19"/></g><g fill="#fff"><rect x="45" y="46" width="9.5" height="17" rx="4.75"/><rect x="62" y="53" width="17" height="4.8" rx="2.4"/></g></svg></span><span>BuriningView</span></a>
+    <nav class="primary-nav" aria-label="Main navigation">
+      <a href="#/explorer" data-nav="explorer"><span class="rail-icon" aria-hidden="true">◎</span>Explorer</a>
+      <a href="#/world" data-nav="world"><span class="rail-icon" aria-hidden="true">◍</span>World</a>
+      <a href="#/dashboard" data-nav="dashboard"><span class="rail-icon" aria-hidden="true">▤</span>Dashboard</a>
+      <a href="#/forecast" data-nav="forecast"><span class="rail-icon" aria-hidden="true">↗</span>Forecast</a>
+      <a href="#/haze" data-nav="haze"><span class="rail-icon" aria-hidden="true">≋</span>Haze</a>
+      <a href="#/data" data-nav="data"><span class="rail-icon" aria-hidden="true">▦</span>Data</a>
+      <a href="#/docs" data-nav="docs"><span class="rail-icon" aria-hidden="true">▱</span>Docs</a>
+    </nav>
+  </header>
+
+  <main class="wrap" id="main" tabindex="-1">
+    <noscript><p class="callout">Enable JavaScript to navigate and use the interactive maps and charts.</p></noscript>
+    <p id="status" class="status" role="status"></p>
+    <section class="fire-overview" data-page="home" aria-labelledby="overview-title">
+      <header class="ov-hero">
+        <div class="ov-hero-text">
+          <p class="ov-kicker"><span class="ov-live" aria-hidden="true"></span>Fire watch · Malaysia &amp; Indonesia</p>
+          <h1 id="overview-title" tabindex="-1">Where are the fires, and where are they heading?</h1>
+          <p class="lead">The latest NASA satellite detections, side by side with the model's outlook for the coming month.</p>
+          <div class="ov-chips">
+            <span class="ov-chip ov-chip-obs"><i aria-hidden="true"></i>Observed <b id="overview-chip-obs">–</b></span>
+            <span class="ov-chip ov-chip-fc"><i aria-hidden="true"></i>Forecast <b id="overview-chip-fc">–</b></span>
+          </div>
+          <div class="ov-filters" data-filters></div>
+        </div>
+        <div class="ov-hero-art" aria-hidden="true">
+          <svg viewBox="0 0 240 200">
+            <g class="ov-orbits" fill="none" stroke-width="1.5">
+              <ellipse cx="120" cy="104" rx="104" ry="40"/>
+              <ellipse cx="120" cy="104" rx="88" ry="58" transform="rotate(-18 120 104)"/>
+            </g>
+            <g class="ov-embers">
+              <circle cx="34" cy="70" r="5"/><circle cx="206" cy="132" r="6"/><circle cx="196" cy="46" r="4"/>
+              <circle cx="52" cy="152" r="3.5"/><circle cx="150" cy="176" r="4"/>
+            </g>
+            <g class="ov-bot" transform="translate(120 100) scale(1.25) translate(-60 -57)">
+              <g fill="var(--mascot, #ee4a3a)">
+                <circle cx="42" cy="53" r="20"/><circle cx="60" cy="42" r="22"/><circle cx="79" cy="54" r="19"/>
+                <circle cx="69" cy="70" r="20"/><circle cx="46" cy="71" r="19"/>
+              </g>
+              <g fill="#fff"><rect x="45" y="46" width="9.5" height="17" rx="4.75"/><rect x="62" y="53" width="17" height="4.8" rx="2.4"/></g>
+            </g>
+          </svg>
+        </div>
+      </header>
+
+      <div class="ov-metrics">
+        <section class="ov-group ov-group-obs" aria-labelledby="ov-obs-h">
+          <h2 id="ov-obs-h" class="ov-group-h"><span>What satellites saw</span><span id="overview-detected-date" class="ov-group-date"></span></h2>
+          <dl class="ov-tiles">
+            <div class="ov-tile"><span class="ov-icon" aria-hidden="true">◉</span><dt>Cells with detected fires</dt><dd id="overview-detected">–</dd><dd class="ov-tile-note">Grid cells about 28 km across</dd></div>
+            <div class="ov-tile"><span class="ov-icon" aria-hidden="true">▲</span><dt>Cells with 8+ fire days</dt><dd id="overview-repeat">–</dd><dd class="ov-tile-note">Burning again and again</dd></div>
+          </dl>
+        </section>
+        <section class="ov-group ov-group-fc" aria-labelledby="ov-fc-h">
+          <h2 id="ov-fc-h" class="ov-group-h"><span>What the model expects</span><span id="overview-watch-date" class="ov-group-date"></span></h2>
+          <dl class="ov-tiles">
+            <div class="ov-tile"><span class="ov-icon" aria-hidden="true">⚑</span><dt>Areas to watch</dt><dd id="overview-area-count">–</dd><dd class="ov-tile-note">With at least one likely-fire cell</dd></div>
+            <div class="ov-tile"><span class="ov-icon" aria-hidden="true">◎</span><dt>Cells with ≥50% chance</dt><dd id="overview-watch-count">–</dd><dd class="ov-tile-note">Of at least one fire day</dd></div>
+          </dl>
+        </section>
+      </div>
+
+      <div class="overview-panels">
+        <section class="card ov-panel">
+          <div class="ov-panel-head">
+            <h2>How intense was the burning?</h2>
+            <span class="ov-tag ov-tag-obs">Observed</span>
+          </div>
+          <p class="note" id="overview-observed-status" role="status">Loading satellite detections…</p>
+          <div class="ov-sev" id="overview-severity" hidden>
+            <div class="ov-sev-bar" id="overview-sev-bar"></div>
+            <ul class="ov-sev-legend" id="overview-sev-legend"></ul>
+          </div>
+          <button type="button" class="ov-btn" id="overview-open-map" disabled>View detections in Explorer <span aria-hidden="true">→</span></button>
+        </section>
+        <section class="card ov-panel">
+          <div class="ov-panel-head">
+            <h2>Places to watch</h2>
+            <span class="ov-tag ov-tag-fc">Forecast</span>
+          </div>
+          <p class="note" id="overview-watch-status" role="status">Loading the fire forecast…</p>
+          <ol id="overview-top-places" class="ov-rank"></ol>
+          <a class="ov-btn ov-btn-ghost" href="#/explorer">Open the place watchlist <span aria-hidden="true">→</span></a>
+        </section>
+      </div>
+
+      <nav class="ov-links" aria-label="Explore more">
+        <a href="#/world" data-nav="world"><span class="ov-link-icon" aria-hidden="true">⊕</span><b>World Fire Atlas</b><small>Every country, 2003–2025</small></a>
+        <a href="#/forecast" data-nav="forecast"><span class="ov-link-icon" aria-hidden="true">↗</span><b>Fire Forecast</b><small>How much fire the coming months may bring</small></a>
+        <a href="#/haze" data-nav="haze"><span class="ov-link-icon" aria-hidden="true">≋</span><b>Haze Preparedness</b><small>What to do before the haze arrives</small></a>
+        <a href="#/dashboard" data-nav="dashboard"><span class="ov-link-icon" aria-hidden="true">▤</span><b>Fire Dashboard</b><small>Burning calendar and year-by-year history</small></a>
+      </nav>
+    </section>
+
+    <section class="watch-workspace explorer-workspace" id="explorer-map-panel" data-page="explorer" aria-labelledby="explorer-title" hidden>
+        <div class="map-toolbar">
+          <h1 id="explorer-title" class="explorer-page-title" tabindex="-1">Fire Explorer</h1>
+          <div class="map-tools">
+          <a class="brand-mark toolbar-brand" href="#/" data-nav="home" aria-label="BuriningView – go to Overview" title="Go to Overview"><svg class="brand-cloud" viewBox="20 18 80 76" aria-hidden="true" focusable="false"><g fill="var(--mascot, #ee4a3a)"><circle cx="42" cy="53" r="20"/><circle cx="60" cy="42" r="22"/><circle cx="79" cy="54" r="19"/><circle cx="69" cy="70" r="20"/><circle cx="46" cy="71" r="19"/></g><g fill="#fff"><rect x="45" y="46" width="9.5" height="17" rx="4.75"/><rect x="62" y="53" width="17" height="4.8" rx="2.4"/></g></svg></a>
+          <details class="hero-options" name="explorer-map-tools">
+            <summary>Map controls</summary>
+            <div class="hero-control-menu"> <div class="hero-buttons">
+                <button type="button" class="hero-reset" id="hero-mode" data-observed-tools disabled>Show flat cells</button>
+                <button type="button" class="hero-reset" id="hero-reset" data-observed-tools disabled>Reset view</button>
+                <button type="button" class="hero-reset" id="hero-world" data-observed-tools disabled>Whole globe</button>
+                <button type="button" class="hero-reset" id="hero-forecast-mode" data-forecast-tools disabled>Show heat map</button>
+                <button type="button" class="hero-reset" id="hero-forecast-reset" data-forecast-tools disabled>Reset view</button>
+              </div>
+            </div>
+          </details>
+          <details class="hero-options" name="explorer-map-tools">
+            <summary>Indicators</summary>
+            <div class="hero-control-menu">
+              <ul class="hero-legend" data-observed-tools aria-label="Days with fire in a cell that month">
+                <li><i class="lv0"></i><span>Light · 1–2 days</span><b id="hero-n0">–</b></li>
+                <li><i class="lv1"></i><span>Moderate · 3–7 days</span><b id="hero-n1">–</b></li>
+                <li><i class="lv2"></i><span>Heavy · 8+ days</span><b id="hero-n2">–</b></li>
+              </ul>
+              <div data-forecast-tools>
+                <div>Chance of at least one fire day per grid cell</div>
+                <ul class="forecast-flame-legend" id="forecast-flame-legend" hidden>
+                  <li>5–34%</li><li>35–69%</li><li>70% and above</li>
+                </ul>
+                <div class="scale forecast-chance-scale" id="forecast-heat-legend"><span>5%</span><span class="bar" aria-hidden="true"></span><span>90%</span></div>
+              </div>
+            </div>
+          </details>
+          </div>
+          <div data-filters></div>
+
+          <span class="note hero-status" id="hero-status" role="status"></span>
+        </div>
+      <section class="watch-map-panel explorer-map-panel" aria-label="3D fire explorer">
+        <div class="explorer-stage">
+          <div class="hero">
+            <div id="hero3d" role="region" aria-label="Satellite fire globe"></div>
+            <div id="explorer-risk-map" role="region" aria-label="Forecast fire-risk map" hidden></div>
+            <div class="hero-tip" id="hero-tip" hidden></div>
+          </div>
+
+          <div class="hero-forecast-read" id="hero-forecast-detail" role="status" hidden></div>
+
+          <div class="hero-hint" data-observed-tools>
+            <div class="hero-gestures">
+              <span class="hero-scale" id="hero-scale" hidden></span>
+              <span>Click to zoom · Right-drag to rotate</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <dialog id="place-search-dialog" class="place-search-dialog" aria-labelledby="place-search-title">
+        <div class="place-search-head">
+          <h2 id="place-search-title">Search places</h2>
+          <form method="dialog"><button class="place-search-close" aria-label="Close place search">×</button></form>
+        </div>
+        <form id="place-search-form" class="place-search-form" role="search">
+          <input id="place-search-input" type="search" aria-label="Find a place" placeholder="e.g. Jambi, Sabah, Malaysia" autocomplete="off" autofocus>
+        </form>
+        <ul id="place-search-results" class="place-search-results" aria-label="Matching places"></ul>
+        <p id="place-search-empty" class="note place-search-empty" role="status" hidden>No matching places.</p>
+      </dialog>
+
+      <aside class="watch-sidebar" aria-label="Watchlist and place information">
+        <section aria-labelledby="watchlist-title">
+          <div class="watch-panel-head">
+            <h2 id="watchlist-title">Place watchlist</h2>
+            <div class="watch-panel-actions">
+              <button type="button" class="watch-button" id="watch-add-toggle" aria-expanded="false"
+                      aria-controls="watch-add-form" disabled>+ Add place</button>
+            </div>
+          </div>
+          <form id="watch-add-form" class="watch-add-form" hidden>
+            <label for="watch-add-place">Forecast area</label>
+            <div class="combo">
+              <input id="watch-add-place" type="text" role="combobox" autocomplete="off" spellcheck="false"
+                     aria-autocomplete="list" aria-expanded="false" aria-controls="watch-add-options"
+                     placeholder="Search or choose a place">
+              <span class="combo-arrow" aria-hidden="true">▾</span>
+              <ul id="watch-add-options" class="combo-list" role="listbox" aria-label="Forecast areas" hidden></ul>
+            </div>
+            <button class="watch-button" type="submit">Add</button>
+          </form>
+          <div class="watch-table">
+            <div class="watch-column-head" aria-hidden="true"><span>Place</span><span>Cells ≥50%</span><span>Max.</span></div>
+            <ul id="explorer-watchlist" class="watch-list" aria-label="Saved places"></ul>
+          </div>
+          <p class="note watch-list-status" id="explorer-watch-status" role="status">Loading forecast areas…</p>
+        </section>
+
+        <section class="watch-detail" aria-labelledby="watch-place-title">
+          <div class="watch-panel-head">
+            <i class="watch-badge watch-badge-lg" id="watch-place-flag" aria-hidden="true"></i>
+            <div>
+              <h2 id="watch-place-title">All regions</h2>
+              <p id="watch-place-region" class="note"></p>
+            </div>
+          </div>
+          <div class="watch-quote" id="watch-quote">
+            <b id="watch-quote-value">–</b>
+            <span class="watch-quote-unit">cells ≥50%</span>
+            <span class="watch-quote-chg" id="watch-quote-chg"></span>
+            <span class="watch-quote-state" id="watch-quote-state">Model estimate</span>
+          </div>
+          <div class="watch-place-content">
+            <p id="watch-place-description">Select a place to see its fire outlook.</p>
+            <dl id="watch-place-stats" class="watch-place-stats"></dl>
+            <div class="watch-share" id="watch-share" hidden>
+              <div class="watch-share-row"><span>Share of all monitored cells</span><b id="watch-share-label">–</b></div>
+              <div class="watch-share-bar"><i id="watch-share-hi"></i><i id="watch-share-lo"></i></div>
+            </div>
+          </div>
+
+          <section class="watch-subpanel" aria-labelledby="watch-gauge-title">
+            <h3 id="watch-gauge-title">Fire outlook</h3>
+            <!-- Five 20-point bands over a half dial. The needle sits at the average
+                 chance of a fire day across the place's mapped cells. -->
+            <div class="watch-gauge" id="watch-gauge" data-band="low">
+              <svg viewBox="0 0 200 116" role="img" aria-labelledby="watch-gauge-desc">
+                <title id="watch-gauge-desc">Fire outlook dial</title>
+                <g class="gauge-track" fill="none" stroke-linecap="round" stroke-width="13">
+                  <path class="g-low"      d="M28.04 97.49 A72 72 0 0 1 40.31 59.74"/>
+                  <path class="g-moderate" d="M43.26 55.67 A72 72 0 0 1 75.37 32.34"/>
+                  <path class="g-elevated" d="M80.15 30.79 A72 72 0 0 1 119.85 30.79"/>
+                  <path class="g-high"     d="M124.63 32.34 A72 72 0 0 1 156.74 55.67"/>
+                  <path class="g-severe"   d="M159.69 59.74 A72 72 0 0 1 171.96 97.49"/>
+                </g>
+                <g class="gauge-needle" id="watch-gauge-needle">
+                  <path d="M100 100 L43 100"/>
+                  <circle cx="100" cy="100" r="5.5"/>
+                </g>
+              </svg>
+              <strong class="gauge-verdict" id="watch-gauge-verdict">–</strong>
+              <span class="gauge-caption" id="watch-gauge-caption"></span>
+            </div>
+          </section>
+
+          <section class="watch-subpanel" aria-labelledby="watch-news-title">
+            <h3 id="watch-news-title">Fire &amp; haze updates</h3>
+            <ul id="watch-news" class="watch-news"></ul>
+          </section>
+
+        </section>
+      </aside>
+    </section>
+
+    <section data-page="world" aria-labelledby="world-title" hidden>
+      <div class="page-head">
+        <p class="eyebrow">2003–2025 · every country</p>
+        <h1 id="world-title" tabindex="-1">World Fire Atlas</h1>
+        <p class="lead">Fire activity for the whole world, harmonized from MODIS and VIIRS NOAA-20 onto one scale. Pick a period, then click a country on the map or in the list.</p>
+      </div>
+      <div class="filters" role="group" aria-label="World filters">
+        <label>Year <select id="w-year"></select></label>
+        <label>Period <select id="w-month"></select></label>
+        <label>Country <select id="w-country"></select></label>
+        <span class="status" id="w-status" role="status"></span>
+      </div>
+      <section class="tiles" id="w-tiles" aria-label="Key figures"></section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2 id="w-map-title">Fire activity map</h2>
+            <p class="note" id="w-map-note">Fire cell-days per 1° grid cell (about 110 km). Hover for details, click a cell to select its country.</p>
+          </div>
+        </div>
+        <div id="w-map" class="map world-map"></div>
+        <div class="scale" id="w-map-legend"></div>
+      </section>
+
+      <div class="world-grid">
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <h2 id="w-rank-title">Countries ranked</h2>
+              <p class="note">Fire cell-days in the selected period, and how that compares with the country's typical level for the same period (median 2003–2025). Click a row to select it.</p>
+            </div>
+          </div>
+          <div class="table-wrap world-rank"><table class="data" id="w-rank"></table></div>
+          <button type="button" class="link-btn" id="w-rank-more" hidden></button>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <h2 id="w-country-title">World</h2>
+              <p class="note" id="w-country-note"></p>
+            </div>
+          </div>
+          <div class="legend" id="w-series-legend"></div>
+          <div class="chart-box"><canvas id="w-series" aria-label="Monthly fire activity for the selected country" role="img"></canvas></div>
+          <h3 class="mini-h">Burning calendar</h3>
+          <div class="cal" id="w-cal"></div>
+          <div class="scale" id="w-cal-legend"></div>
+        </section>
+      </div>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>Global calibration: MODIS → VIIRS NOAA-20</h2>
+            <p class="note">For each country, VIIRS = k × MODIS is fitted on monthly fire cell-days from April 2018 to 2025, when both sensors observed. It is tested by leaving out one year at a time, and by fitting on 2018–2023 and predicting 2024–2025. Countries with too few fires use the pooled global k.</p>
+          </div>
+        </div>
+        <div class="tiles inner" id="w-val"></div>
+        <div class="table-wrap"><table class="data" id="w-calib"></table></div>
+      </section>
+    </section>
+
+    <section data-page="dashboard" aria-labelledby="dashboard-title" hidden>
+      <div class="page-head">
+        <p class="eyebrow">2003–2025 observations</p>
+        <h1 id="dashboard-title" tabindex="-1">Fire Dashboard</h1>
+        <p class="lead">Explore regional fire seasons, compare years, and locate satellite-detected hotspots.</p>
+      </div>
+      <nav class="section-nav" aria-label="Dashboard sections">
+        <a href="#/dashboard?section=calendar">Burning calendar</a>
+        <a href="#/dashboard?section=hotspots">Hotspot map</a>
+        <a href="#/dashboard?section=history">Historical comparison</a>
+      </nav>
+      <div data-filters></div>
+      <div data-section="calendar">
+        <section class="tiles" id="tiles" aria-label="Key figures"></section>
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>Burning calendar</h2>
+            <p class="note" id="cal-note"></p>
+          </div>
+          <div class="seg" role="radiogroup" aria-label="Calendar colour">
+            <button type="button" data-mode="activity" aria-pressed="true">Activity</button>
+            <button type="button" data-mode="anomaly" aria-pressed="false">vs typical</button>
+          </div>
+        </div>
+        <div class="cal" id="cal"></div>
+        <div class="scale" id="cal-legend"></div>
+        <a class="panel-link" href="#/dashboard?section=hotspots">View selected month on the map <span aria-hidden="true">→</span></a>
+        <details class="table-view">
+          <summary>Show as table</summary>
+          <div class="table-wrap" id="cal-table"></div>
+        </details>
+      </section>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Monthly fire activity</h2>
+          <p class="note">Fire cell-days per month on the VIIRS scale. Before Feb 2012 the values are MODIS counts calibrated to VIIRS. Click a month to select it.</p>
+        </div>
+        <div class="controls">
+          <label class="check"><input type="checkbox" id="t-raw" checked> Raw MODIS</label>
+          <label class="check"><input type="checkbox" id="t-log"> Log scale</label>
+        </div>
+      </div>
+      <div class="legend" id="ts-legend"></div>
+      <div class="chart-box"><canvas id="ts" aria-label="Monthly fire activity line chart" role="img"></canvas></div>
+    </section>
+      </div>
+      <div data-section="hotspots" hidden>
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2 id="map-title">Hotspot map</h2>
+            <p class="note" id="map-note"></p>
+          </div>
+          <label class="inline">Sensor
+            <select id="f-sensor">
+              <option value="auto">Auto</option>
+              <option value="VIIRS">VIIRS</option>
+              <option value="MODIS">MODIS</option>
+            </select>
+          </label>
+        </div>
+        <div id="map" class="map"></div>
+        <div class="scale" id="map-legend"></div>
+      </section>
+      </div>
+      <div data-section="history" hidden>
+      <section class="card">
+        <div class="card-head">
+          <div><h2>How does a month compare with history?</h2></div>
+        </div>
+        <div class="filters-inline">
+          <label>Month <select id="h-month"></select></label>
+          <label>Year <select id="h-year"></select></label>
+          <span class="note">Select a bar to change the comparison year.</span>
+        </div>
+        <div class="legend" id="hist-legend"></div>
+        <div class="chart-box short"><canvas id="hist" aria-label="Same month across all years bar chart" role="img"></canvas></div>
+        <div class="callout" id="hist-callout"></div>
+      </section>
+      </div>
+    </section>
+
+    <section data-page="forecast" aria-labelledby="forecast-title" hidden>
+      <div class="page-head">
+        <p class="eyebrow">2026–2027 outlook</p>
+        <h1 id="forecast-title" tabindex="-1">Fire Forecast</h1>
+        <p class="lead">See how much fire activity is expected each month and which areas are most likely to burn.</p>
+      </div>
+      <div data-filters></div>
+    <section class="card" id="forecast-card">
+      <div class="card-head">
+        <div>
+          <h2>Fire outlook: forecast</h2>
+          <p class="note">Forecast of monthly fire activity after the data ends (Dec 2025). It combines the recent seasonal pattern with the El Niño index (NOAA ONI). El Niño brings drought to Indonesia and Borneo and drove the 2015, 2019 and 2023 haze seasons.</p>
+        </div>
+      </div>
+      <p class="enso-line" id="enso-line"></p>
+      <div class="tiles inner" id="fc-tiles"></div>
+      <div class="legend" id="fc-legend"></div>
+      <div class="chart-box"><canvas id="fc-chart" aria-label="Fire forecast chart" role="img"></canvas></div>
+      <p class="note" id="fc-notes"></p>
+      <details class="table-view">
+        <summary>Show forecast table</summary>
+        <div class="table-wrap"><table class="data" id="fc-table"></table></div>
+      </details>
+
+      <div class="subsection">
+        <h3 class="sub-h">Where: forecast fire risk by place and month</h3>
+        <p class="note" id="where-note">Chance of at least one fire day in each ~28 km grid cell. Pick a month.</p>
+        <div class="chip-row month-pick" id="where-months" role="radiogroup" aria-label="Forecast month"></div>
+        <div class="where">
+          <div>
+            <div class="map-tools forecast-map-tools" role="group" aria-label="Forecast map tools">
+              <details class="hero-options" name="forecast-map-tools">
+                <summary>Map controls</summary>
+                <div class="hero-control-menu">
+                  <button type="button" class="hero-reset" id="fc-map-reset" disabled>Reset view</button>
+                </div>
+              </details>
+              <details class="hero-options" name="forecast-map-tools">
+                <summary>Indicators</summary>
+                <div class="hero-control-menu">
+                  <div>Chance of at least one fire day per grid cell</div>
+                  <div class="scale forecast-chance-scale" id="fc-map-legend"></div>
+                </div>
+              </details>
+            </div>
+            <div id="fc-map" class="map"></div>
+          </div>
+          <div>
+            <h4 class="mini-h" id="top-title">Top areas</h4>
+            <ol class="top-list" id="top-areas"></ol>
+          </div>
+        </div>
+        <h4 class="mini-h">Which month, which place: expected fire days in <span id="matrix-year"></span></h4>
+        <p class="note">Rows are areas, largest first. Each row is coloured relative to that area's own peak month (outlined), so the grid shows each area's fire season. Click a cell to show that month on the map. Area names are approximate (nearest province, state or division centre).</p>
+        <div class="table-wrap"><div class="matrix" id="fc-matrix"></div></div>
+        <p class="note" id="where-skill"></p>
+      </div>
+    </section>
+    </section>
+
+    <section data-page="haze" aria-labelledby="haze-title" hidden>
+      <div class="page-head">
+        <h1 id="haze-title" tabindex="-1">Haze Preparedness</h1>
+        <p class="lead">Identify the months with the highest fire risk and prepare for the haze season.</p>
+      </div>
+      <div data-filters></div>
+      <p class="status" id="haze-status" role="status"></p>
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>Haze preparedness for this area</h2>
+            <p class="note">Typical fire season, based on the 2003–2025 median of each calendar month. Smoke from these fires can reach Malaysia and Singapore within days, depending on the winds.</p>
+          </div>
+        </div>
+        <div class="chip-row" id="season-chips" aria-label="Typical fire season by month"></div>
+        <p class="risk-line" id="season-line"></p>
+        <div id="outlook-wrap" hidden>
+          <div class="chip-label" id="outlook-label"></div>
+          <div class="chip-row" id="outlook-chips" aria-label="Forecast chance of above-normal burning by month"></div>
+          <p class="note" id="outlook-line"></p>
+        </div>
+        <div class="prep-kit" aria-labelledby="prep-title">
+          <div class="prep-head">
+            <div class="prep-sky" aria-hidden="true"><i></i><i></i><i></i></div>
+            <svg class="prep-ziro" viewBox="0 0 120 112" aria-hidden="true">
+              <!-- Ziro in a mask -->
+              <g class="prep-ziro-body">
+                <g fill="var(--mascot, #ee4a3a)">
+                  <circle cx="42" cy="53" r="20"/><circle cx="60" cy="42" r="22"/><circle cx="79" cy="54" r="19"/>
+                  <circle cx="69" cy="70" r="20"/><circle cx="46" cy="71" r="19"/>
+                </g>
+                <g fill="#fff"><rect x="45" y="40" width="9" height="14" rx="4.5"/><rect x="65" y="40" width="9" height="14" rx="4.5"/></g>
+                <path d="M30 58 L40 62 M90 58 L80 62" stroke="#cfe3f5" stroke-width="2.5" stroke-linecap="round"/>
+                <path d="M39 60 Q60 54 81 60 L79 76 Q60 86 41 76 Z" fill="#fff" stroke="#cfe3f5" stroke-width="2"/>
+                <path d="M46 66 Q60 62 74 66 M46 72 Q60 68 74 72" fill="none" stroke="#b9d3ea" stroke-width="1.6"/>
+              </g>
+              <g class="prep-sparkles" fill="#f59e0b"><circle cx="16" cy="30" r="3"/><circle cx="104" cy="22" r="2.5"/><circle cx="108" cy="88" r="3"/></g>
+            </svg>
+            <div class="prep-head-text">
+              <p class="prep-kicker">Ziro's haze kit</p>
+              <h3 id="prep-title">Before the high-risk months</h3>
+              <p class="prep-sub">Four things to sort out now, before the smoke arrives.</p>
+            </div>
+          </div>
+          <ul id="prep-list" class="prep-cards"></ul>
+          <p class="fine prep-fine"><span aria-hidden="true">ⓘ</span> General guidance only, not medical advice. Fire counts show where and when burning happens, not the air quality where you are.</p>
+        </div>
+      </section>
+    </section>
+
+    <section data-page="data" aria-labelledby="data-title" hidden>
+      <div class="page-head">
+        <h1 id="data-title" tabindex="-1">Data &amp; Methods</h1>
+        <p class="lead">The data behind BuriningView, how the sensors are harmonized, and how the calibration is tested.</p>
+      </div>
+      <div class="data-layout">
+        <nav class="section-nav data-nav" aria-label="Data sections">
+          <a href="#/data?section=sources">Data sources</a>
+          <a href="#/data?section=methods">Harmonization method</a>
+          <a href="#/data?section=calibration">Calibration results</a>
+        </nav>
+        <div data-section="sources">
+          <section class="card source-card">
+            <h2>Data sources</h2>
+            <dl class="sources">
+              <div><dt><a href="https://firms.modaps.eosdis.nasa.gov/">NASA FIRMS <span aria-hidden="true">↗</span></a></dt><dd>Active fire detections from MODIS Collection 6.1 (1 km) and VIIRS S-NPP (375 m).</dd></div>
+              <div><dt><a href="https://www.cpc.ncep.noaa.gov/data/indices/oni.ascii.txt">NOAA Climate Prediction Center <span aria-hidden="true">↗</span></a></dt><dd>The Oceanic Niño Index used in fire forecasts.</dd></div>
+              <div><dt>Map imagery and terrain</dt><dd>Esri basemap, OpenStreetMap contributors, NASA GIBS Blue Marble imagery, AWS Terrain Tiles (Mapzen Terrarium), and Natural Earth boundaries.</dd></div>
+            </dl>
+          </section>
+        </div>
+        <div data-section="methods" hidden>
+          <section class="card source-card">
+            <h2>Harmonization method</h2>
+            <ol class="method-steps">
+              <li><strong>Count fire cell-days.</strong> Hotspots are placed on a 0.05° grid. Each cell with a fire detection counts once per day, regardless of how many pixels detect it.</li>
+              <li><strong>Calibrate older observations.</strong> For each region, a linear model and a power-law model are fitted using the months when both MODIS and VIIRS observed, from February 2012 through 2025.</li>
+              <li><strong>Validate across years.</strong> Each overlap year is held out in turn. The model with the lower error on held-out years converts the older MODIS counts to the VIIRS scale.</li>
+              <li><strong>Measure departures from typical activity.</strong> Each month is compared with the median for the same calendar month across 2003–2025.</li>
+            </ol>
+            <a href="#/data?section=calibration">View calibration results <span aria-hidden="true">→</span></a>
+          </section>
+        </div>
+        <div data-section="calibration" hidden>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>MODIS → VIIRS calibration</h2>
+          <p class="note">Each dot is one month in which both sensors observed (Feb 2012–2025). The line is the fitted model used to bring older MODIS months onto the VIIRS scale.</p>
+        </div>
+        <label class="inline" id="calib-pick-wrap">Region <select id="calib-pick"></select></label>
+      </div>
+      <div class="calib">
+        <div class="chart-box square"><canvas id="scatter" aria-label="MODIS versus VIIRS scatter plot" role="img"></canvas></div>
+        <div>
+          <div class="table-wrap"><table class="data" id="calib-table"></table></div>
+          <p class="note" id="calib-foot" style="margin-top:10px"></p>
+        </div>
+      </div>
+    </section>
+        </div>
+      </div>
+    </section>
+
+    <section data-page="docs" aria-labelledby="docs-title" hidden>
+      <div class="doc-shell">
+        <aside class="doc-side">
+          <p class="doc-side-label">Get started</p>
+          <nav class="section-nav doc-side-nav" aria-label="Get started">
+            <a href="#/docs?section=catalogue">Data catalogue</a>
+          </nav>
+          <p class="doc-side-label">Reference</p>
+          <nav class="section-nav doc-side-nav" aria-label="Reference">
+            <a href="#/docs?section=climate">Climate data</a>
+            <a href="#/docs?section=skill">What the data is worth</a>
+            <a href="#/docs?section=files">Files</a>
+          </nav>
+          <p class="doc-side-label">Rebuild</p>
+          <nav class="section-nav doc-side-nav" aria-label="Rebuild">
+            <a href="#/docs?section=reproduce">Reproduce</a>
+          </nav>
+        </aside>
+
+        <div class="doc-main">
+          <header class="doc-head">
+            <p class="eyebrow">Documentation</p>
+            <h1 id="docs-title" tabindex="-1">Docs</h1>
+            <p class="lead">Every dataset this project holds or has tested: what it covers, where it comes from, and whether anything reads it yet.</p>
+          </header>
+
+          <div data-section="catalogue">
+            <div class="doc-cards">
+              <a class="doc-card" href="#/docs?section=climate">
+                <span class="doc-card-icon" aria-hidden="true">◔</span>
+                <span class="doc-card-title">Climate drivers</span>
+                <span class="doc-card-body">Rainfall, humidity and soil wetness for every region, back to 1981. The first data here that predicts fire rather than counting it.</span>
+              </a>
+              <a class="doc-card" href="#/docs?section=skill">
+                <span class="doc-card-icon" aria-hidden="true">▲</span>
+                <span class="doc-card-title">What the data is worth</span>
+                <span class="doc-card-body">Every input tested the same honest way: issued in May, scored on the dry season. Two inputs win. Four make it worse.</span>
+              </a>
+              <a class="doc-card" href="#/docs?section=files">
+                <span class="doc-card-icon" aria-hidden="true">≡</span>
+                <span class="doc-card-title">Files on disk</span>
+                <span class="doc-card-body">What each file holds, how many rows, and which of them the website actually reads today.</span>
+              </a>
+            </div>
+
+            <h3 id="catalogue-list">All datasets</h3>
+            <div class="table-wrap">
+              <table class="data doc-table">
+                <thead>
+                  <tr><th>Dataset</th><th>What it gives</th><th>Coverage</th><th>Grid</th><th>Status</th><th>Licence</th></tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><a href="https://firms.modaps.eosdis.nasa.gov/">NASA FIRMS · MODIS C6.1</a></td>
+                    <td>Active fire detections, Terra and Aqua</td><td>2003–2025</td><td>1 km</td>
+                    <td><span class="st used">In use</span></td><td>Free, open</td>
+                  </tr>
+                  <tr>
+                    <td><a href="https://firms.modaps.eosdis.nasa.gov/">NASA FIRMS · VIIRS S-NPP</a></td>
+                    <td>Active fire detections, afternoon overpass</td><td>Feb 2012–2025</td><td>375 m</td>
+                    <td><span class="st used">In use</span></td><td>Free, open</td>
+                  </tr>
+                  <tr>
+                    <td>NASA FIRMS · VIIRS NOAA-20</td>
+                    <td>Second VIIRS overpass, 1.4 M detections</td><td>2018–2025</td><td>375 m</td>
+                    <td><span class="st ready">Pulled</span></td><td>Free, open</td>
+                  </tr>
+                  <tr>
+                    <td><a href="https://www.cpc.ncep.noaa.gov/data/indices/oni.ascii.txt">NOAA CPC · ONI</a></td>
+                    <td>El Niño index, drives the forecast term</td><td>1950–2026</td><td>Monthly</td>
+                    <td><span class="st used">In use</span></td><td>Free, open</td>
+                  </tr>
+                  <tr>
+                    <td><a href="https://power.larc.nasa.gov/">NASA POWER</a></td>
+                    <td>Rain, temperature, humidity, wind, soil wetness</td><td>1981–Sep 2026</td><td>0.5°</td>
+                    <td><span class="st ready">Pulled</span></td><td>Free, open</td>
+                  </tr>
+                  <tr>
+                    <td><a href="https://data.giss.nasa.gov/impacts/gfwed/">NASA GISS · GFWED</a></td>
+                    <td>Fire weather: FWI, drought code and five more indices</td><td>Jan 2003–Apr 2026</td><td>0.5° × ⅔°</td>
+                    <td><span class="st ready">Pulled</span></td><td>Free, open</td>
+                  </tr>
+                  <tr>
+                    <td><a href="https://stateoftheocean.osmc.noaa.gov/sur/ind/dmi.php">NOAA / BoM · DMI</a></td>
+                    <td>Indian Ocean Dipole, a second climate dial</td><td>Sep 1981–Sep 2026</td><td>Monthly</td>
+                    <td><span class="st ready">Pulled</span></td><td>Free, open</td>
+                  </tr>
+                  <tr>
+                    <td><a href="https://www.chc.ucsb.edu/data/chirps">CHIRPS v2.0</a></td>
+                    <td>Gauge-corrected satellite rainfall</td><td>1981–present</td><td>0.05°</td>
+                    <td><span class="st avail">Available</span></td><td>Public domain</td>
+                  </tr>
+                  <tr>
+                    <td>ESA Fire_cci</td>
+                    <td>Burned area, an independent check on the record</td><td>2001–present</td><td>250 m</td>
+                    <td><span class="st avail">Available</span></td><td>ESA CCI terms</td>
+                  </tr>
+                  <tr>
+                    <td><a href="https://asmc.asean.org/asmc-hotspot/">ASMC</a></td>
+                    <td>Daily ASEAN hotspot coordinates</td><td>Daily</td><td>~1 km</td>
+                    <td><span class="st avail">Available</span></td><td>Free, cite ASMC</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h3 id="catalogue-status">What the status means</h3>
+            <ul class="doc-list">
+              <li><span class="st used">In use</span> — the dataset drives a chart or the forecast on this site.</li>
+              <li><span class="st ready">Pulled</span> — the file is on disk but nothing reads it yet.</li>
+              <li><span class="st avail">Available</span> — the download route was tested, but nothing has been collected.</li>
+            </ul>
+            <p class="doc-note">Nothing on this page changes the forecast on its own. A dataset entering the model is a separate step.</p>
+          </div>
+
+          <div data-section="climate" hidden>
+            <h3 id="climate-pull">The pull</h3>
+            <p class="doc-note">Monthly weather for every fire region, so the model can see how dry a season actually was. Collected from the NASA POWER API, which needs no key and no registration.</p>
+            <div class="tiles inner">
+              <div class="tile"><div class="k">Points sampled</div><div class="v">28</div><div class="d">Across the 5 regions</div></div>
+              <div class="tile"><div class="k">History</div><div class="v">551</div><div class="d">Months per point, 1981 to Sep 2026</div></div>
+              <div class="tile"><div class="k">Variables</div><div class="v">6</div><div class="d">Rain, temp, max temp, humidity, wind, soil</div></div>
+              <div class="tile"><div class="k">Pull time</div><div class="v">6.3 s</div><div class="d">28 requests in parallel</div></div>
+            </div>
+
+            <h3 id="climate-skill">Does rainfall predict fire?</h3>
+            <p class="doc-note">Share of the month-to-month variation in fire activity explained by the previous three months of rainfall, 2003–2025, against what the calendar month alone explains.</p>
+            <div class="table-wrap">
+              <table class="data doc-table">
+                <thead><tr><th>Region</th><th>Rain explains</th><th>Calendar month alone</th><th>Rain adds</th></tr></thead>
+                <tbody>
+                  <tr><td>Peninsular Malaysia</td><td>25.2%</td><td>3.9%</td><td>Yes, strongly</td></tr>
+                  <tr><td>Sumatra</td><td>19.9%</td><td>24.1%</td><td>Yes, as much as the season</td></tr>
+                  <tr><td>Sabah</td><td>19.9%</td><td>21.1%</td><td>Yes, marginal</td></tr>
+                  <tr><td>Kalimantan</td><td>8.0%</td><td>25.9%</td><td>Weak</td></tr>
+                  <tr><td>Sarawak</td><td>1.8%</td><td>48.4%</td><td>No</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="callout">
+              <strong>Sumatra, in plain numbers.</strong> The driest tenth of three-month spells average
+              <strong>5,783</strong> fire cell-days a month. The wettest tenth average <strong>784</strong>.
+              A <strong>7.4×</strong> difference, measured on this project's own record.
+            </div>
+
+            <h3 id="climate-caveats">Caveats</h3>
+            <ul class="doc-list">
+              <li>Sarawak is the exception: its fire follows the calendar, not how dry the preceding quarter was. Do not claim a rainfall effect there without showing it.</li>
+              <li>POWER reports monthly rainfall as millimetres <em>per day</em>, not per month. January's 7.6 for Sumatra means about 236 mm for the month. Convert before use or everything is off by roughly 30×.</li>
+            </ul>
+          </div>
+
+          <div data-section="skill" hidden>
+            <h3 id="skill-method">How this was measured</h3>
+            <p class="doc-note">Every dataset on this page was tested the same way, and the test is deliberately unkind to the model. A forecast is issued at the end of May for June to November of the same year, using only what is knowable at that moment: January to May of the target year, carried forward. The model learns from earlier years only, and the year being predicted never appears in its training set.</p>
+            <div class="tiles inner">
+              <div class="tile"><div class="k">Issued</div><div class="v">31 May</div><div class="d">Forecasting Jun–Nov, the dry half</div></div>
+              <div class="tile"><div class="k">Learns from</div><div class="v">2003–2024</div><div class="d">Earlier years only, never the target</div></div>
+              <div class="tile"><div class="k">Scored by</div><div class="v">Median</div><div class="d">Typical error of a forecast month</div></div>
+            </div>
+            <p class="doc-note">Lower is better. The baseline is the site as it runs today: the mean of the previous five years, same month, in log space.</p>
+
+            <h3 id="skill-results">What each input bought</h3>
+            <p class="doc-note">All five regions together, weighted by how much fire each one actually carries.</p>
+            <div class="table-wrap">
+              <table class="data doc-table">
+                <thead><tr><th>Inputs given to the model</th><th>Typical error</th><th>Change</th></tr></thead>
+                <tbody>
+                  <tr><td>Seasonal pattern only (the baseline)</td><td>67.1%</td><td>—</td></tr>
+                  <tr><td>+ El Niño + drought code</td><td><strong>49.0%</strong></td><td><strong>−18.1 pts</strong></td></tr>
+                  <tr><td>+ El Niño alone</td><td>49.7%</td><td>−17.4 pts</td></tr>
+                  <tr><td>+ rainfall alone</td><td>54.6%</td><td>−12.5 pts</td></tr>
+                  <tr><td>+ drought code alone</td><td>63.1%</td><td>−4.0 pts</td></tr>
+                  <tr><td>+ Indian Ocean Dipole alone</td><td>67.5%</td><td>+0.4 pts, no help</td></tr>
+                  <tr><td>All four together</td><td>67.0%</td><td>−0.1 pts, no help</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="callout">
+              <strong>Two is the ceiling, not four.</strong> Adding every dataset at once lands back where the
+              model started. With roughly ten usable training years, each extra input costs more in noise than
+              it returns in signal. El Niño plus drought code is the pair that works.
+            </div>
+
+            <h3 id="skill-regions">Best input for each region</h3>
+            <p class="doc-note">The same test, run region by region. The winning input is not the same everywhere.</p>
+            <div class="table-wrap">
+              <table class="data doc-table">
+                <thead><tr><th>Region</th><th>Best input</th><th>Typical error</th><th>Baseline</th><th>Gain</th></tr></thead>
+                <tbody>
+                  <tr><td>Sarawak</td><td>Drought code</td><td><strong>34.8%</strong></td><td>46.2%</td><td>−11.4 pts</td></tr>
+                  <tr><td>Sabah</td><td>Drought code</td><td><strong>36.0%</strong></td><td>42.8%</td><td>−6.8 pts</td></tr>
+                  <tr><td>Kalimantan</td><td>El Niño + drought code</td><td><strong>48.1%</strong></td><td>55.1%</td><td>−7.0 pts</td></tr>
+                  <tr><td>Sumatra</td><td>El Niño</td><td><strong>60.4%</strong></td><td>63.0%</td><td>−2.6 pts</td></tr>
+                  <tr><td>Peninsular Malaysia</td><td>El Niño</td><td>31.6%</td><td>31.7%</td><td>−0.1 pts, no gain</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="callout">
+              <strong>Sarawak was not undriven, it was mis-driven.</strong> The model already rejected El Niño
+              there, scoring 47.4% against the baseline's 48.5%. Drought code cuts the same error by
+              11 points. The region always had a driver; the site was looking at the wrong one.
+            </div>
+
+            <h3 id="skill-caveats">Read this before quoting any of it</h3>
+            <ul class="doc-list">
+              <li><strong>Do not compare these numbers with the 38.2% in the README.</strong> That figure spans all twelve months and uses the year's actual El Niño value, which is not known when the forecast is made. This table covers the dry-season half only, with no foreknowledge. They are different measurements of different things.</li>
+              <li><strong>Choosing the winning input per region is mild hindsight.</strong> The pick is made after seeing the backtest, which flatters the result. The existing <code>use_enso</code> flag already works this way. It is disclosed here rather than hidden.</li>
+              <li><strong>None of this is wired into the model yet.</strong> <code>forecast.py</code> still runs on El Niño alone, and it still reads the target year's own index. The numbers above describe what the data is worth, not what the site currently does.</li>
+            </ul>
+          </div>
+
+          <div data-section="files" hidden>
+            <h3 id="files-data">Project data</h3>
+            <p class="doc-note">What is on disk, and what each file is for.</p>
+            <div class="table-wrap">
+              <table class="data doc-table">
+                <thead><tr><th>File</th><th>Rows</th><th>Contents</th></tr></thead>
+                <tbody>
+                  <tr><td><code>data/power_regions_monthly.csv</code></td><td>2,755</td><td>5 regions × 551 months, climate variables averaged over each region</td></tr>
+                  <tr><td><code>data/power_points_monthly.csv</code></td><td>15,428</td><td>28 points × 551 months, for the map layer</td></tr>
+                  <tr><td><code>Clean_dataset/harmonized_monthly.csv</code></td><td>1,380</td><td>5 regions × 276 months of harmonized fire cell-days</td></tr>
+                  <tr><td><code>Clean_dataset/calibration.csv</code></td><td>5</td><td>MODIS to VIIRS fit per region, with held-out scores</td></tr>
+                  <tr><td><code>*.csv</code> (repo root)</td><td>~6.8 M</td><td>Raw NASA FIRMS downloads, six files</td></tr>
+                  <tr><td><code>data/gfwed_regions_monthly.csv</code></td><td>1,400</td><td>5 regions × 280 months of fire weather: FWI, drought code, DMC, BUI, ISI, FFMC, DSR</td></tr>
+                  <tr><td><code>data/dmi_monthly.csv</code></td><td>541</td><td>Monthly Indian Ocean Dipole index, 1981 to Sep 2026</td></tr>
+                  <tr><td><code>backend/.cache/oni.txt</code></td><td>~900</td><td>Cached NOAA ONI table</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="doc-note">The two climate files are not read by the API. They exist as data, ready to be joined.</p>
+          </div>
+
+          <div data-section="reproduce" hidden>
+            <h3 id="repro-steps">Steps</h3>
+            <ol class="method-steps">
+              <li><strong>Rebuild the fire record.</strong><br><code>python Clean.py --modis "modis_2000-2025_*.csv" --viirs "viirs-snpp_2012-2025_*.csv" --out Clean_dataset\clean_hotspots.csv</code></li>
+              <li><strong>Recalibrate MODIS to VIIRS.</strong><br><code>python calibration.py --inp clean_hotspots.csv</code></li>
+              <li><strong>Pull the climate data.</strong><br><code>python pull_power.py</code> — 28 parallel requests, no key, about six seconds.</li>
+              <li><strong>Re-run the rainfall check.</strong><br><code>python check_power_vs_fire.py</code> — reproduces the numbers on the Climate data page.</li>
+              <li><strong>Pull the fire weather.</strong><br><code>python pull_gfwed.py</code> — 288 monthly files, ten at a time, about ten minutes. Resumable: re-run it and it continues where it stopped.</li>
+              <li><strong>Re-run the accuracy test.</strong><br><code>python eval_predictors.py</code> — reproduces every number on the What the data is worth page.</li>
+            </ol>
+            <p class="doc-note">All four scripts sit in the project root and use the backend virtual environment.</p>
+          </div>
+        </div>
+
+        <nav class="doc-toc" aria-label="On this page">
+          <p class="doc-toc-label">On this page</p>
+          <div id="doc-toc-links"></div>
+        </nav>
+      </div>
+    </section>
+
+    <div id="filters" class="filters" role="group" aria-label="Filters" hidden>
+      <label>Area <select id="f-scope" disabled></select></label>
+      <!-- One timeline across observations and forecast. Everything up to the last
+           month of FIRMS data is detections; past it is model forecast. Today is
+           marked on the track. -->
+      <div class="timeline" data-timeline-filter data-mode="observed" hidden>
+        <div class="timeline-head">
+          <label for="f-timeline">Timeline</label>
+          <span class="timeline-mode" id="f-mode-chip">Detections</span>
+          <span class="timeline-date" id="f-date-label"></span>
+        </div>
+        <div class="timeline-track" id="f-track">
+          <input id="f-timeline" type="range" min="0" max="1" step="1" disabled>
+        </div>
+        <div class="timeline-years" aria-hidden="true">
+          <span id="f-first-year"></span>
+          <span class="timeline-key"><i class="k-past"></i>Detections <i class="k-future"></i>Forecast</span>
+          <span id="f-last-year"></span>
+        </div>
+      </div>
+      <label data-observed-filter>Year <select id="f-year" disabled></select></label>
+      <label data-observed-filter>Month <select id="f-month" disabled></select></label>
+      <label data-forecast-filter hidden>Forecast year <select id="fc-year" disabled></select></label>
+      <label data-forecast-filter hidden>El Niño <select id="fc-enso" disabled></select></label>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <span>BuriningView <span class="footer-dot">·</span> NASA Space Apps Challenge 2026</span>
+      <a href="#/data?section=sources">Data sources and credits</a>
+    </div>
+  </footer>
+  <div id="tip" class="tip" role="tooltip" hidden></div>
+
+  <!-- Consultant: floating launcher and card, bottom right. -->
+  <button type="button" id="ask-toast" class="ask-toast" hidden aria-live="polite"></button>
+  <button type="button" id="ask-open" class="ask-open" hidden
+          aria-expanded="false" aria-controls="ask-panel">
+    <span class="ask-open-mark" id="ask-open-mark" aria-hidden="true"></span>
+    <span class="ask-open-text">Ask Ziro</span>
+  </button>
+
+  <aside id="ask-panel" class="ask-panel" hidden aria-labelledby="ask-title" role="dialog">
+    <header class="ask-head">
+      <div class="ask-bot-slot" id="ask-bot-head"></div>
+      <h2 id="ask-title" class="ask-title">Ziro</h2>
+      <button type="button" id="ask-close" class="ask-close" aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>
+      </button>
+    </header>
+
+    <div id="ask-log" class="ask-log" role="log" aria-live="polite" aria-atomic="false">
+      <div class="ask-intro">
+        <div class="ask-bot-slot ask-bot-big" id="ask-bot-intro"></div>
+        <p class="ask-hello">Ask Ziro about fire or haze.</p>
+        <div class="ask-seeds" id="ask-seeds">
+          <button type="button">Haze this year?</button>
+          <button type="button">Worst months in Sarawak</button>
+          <button type="button">Where will it burn?</button>
+        </div>
+      </div>
+    </div>
+
+    <form id="ask-form" class="ask-form">
+      <label class="sr-only" for="ask-input">Your question</label>
+      <textarea id="ask-input" rows="1" placeholder="Message Ziro…" autocomplete="off"></textarea>
+      <button type="submit" id="ask-send" aria-label="Send">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.4 20.4 21 12 3.4 3.6 3.4 10l12.6 2-12.6 2z"/></svg>
+      </button>
+    </form>
+    <p class="ask-foot">Guidance only · not an official warning</p>
+  </aside>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+  <!-- Consultant mascot. Three shapes from one 120x120 box: a cloud (resting, winking),
+       a ball (waking up) and a triangle (working, with orbit rings). CSS cross-fades
+       between them per data-state; colour comes from --mascot. -->
+  <template id="ask-bot-tpl">
+    <div class="ask-bot" data-state="idle">
+      <svg viewBox="0 0 120 120" aria-hidden="true" focusable="false">
+        <g class="bot-rings">
+          <ellipse class="r1" cx="60" cy="60" rx="56" ry="22"/>
+          <ellipse class="r2" cx="60" cy="60" rx="52" ry="26"/>
+          <ellipse class="r3" cx="60" cy="60" rx="57" ry="18"/>
+          <ellipse class="r4" cx="60" cy="60" rx="50" ry="29"/>
+          <ellipse class="r5" cx="60" cy="60" rx="55" ry="21"/>
+        </g>
+        <g class="bot-body">
+          <g class="bot-shape bot-cloud">
+            <g class="bot-fill">
+              <circle cx="42" cy="53" r="20"/>
+              <circle cx="60" cy="42" r="22"/>
+              <circle cx="79" cy="54" r="19"/>
+              <circle cx="69" cy="70" r="20"/>
+              <circle cx="46" cy="71" r="19"/>
+            </g>
+            <rect class="bot-eye" x="45" y="46" width="9.5" height="17" rx="4.75"/>
+            <rect class="bot-eye" x="62" y="53" width="17" height="4.8" rx="2.4"/>
+          </g>
+          <g class="bot-shape bot-ball">
+            <circle class="bot-fill" cx="60" cy="60" r="42"/>
+            <rect class="bot-eye" x="44" y="55" width="15" height="10" rx="5"/>
+            <rect class="bot-eye" x="66" y="55" width="15" height="10" rx="5"/>
+          </g>
+          <g class="bot-shape bot-tri">
+            <polygon class="bot-fill bot-tri-poly" points="60,34 92,80 28,80"/>
+            <rect class="bot-eye" x="59" y="55" width="7.5" height="14" rx="3.75"/>
+            <rect class="bot-eye" x="72" y="55" width="7.5" height="14" rx="3.75"/>
+          </g>
+        </g>
+      </svg>
+    </div>
+  </template>
+
+  <script src="app.js?v=ui-20261115j" defer></script>
+  <script src="world.js?v=ui-20261115j" defer></script>
+  <script src="consultant.js?v=ui-20261115j" defer></script>
+  <script src="timeline-fx.js?v=ui-20261115j" defer></script>
+  <script src="state-map.js?v=ui-20261115k" defer></script>
+</body>
+</html>
