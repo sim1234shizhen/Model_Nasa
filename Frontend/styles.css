@@ -404,7 +404,7 @@ table.data tr.sel td:first-child { font-weight: 600; }
 .ask-msg.bot > :first-child { margin-top: 0 }
 .ask-msg.bot > :last-child { margin-bottom: 0 }
 .ask-msg.bot p { margin: 0 0 10px }
-.ask-msg.bot ul { margin: 0 0 10px; padding-left: 20px }
+.ask-msg.bot ul, .ask-msg.bot ol { margin: 0 0 10px; padding-left: 20px }
 .ask-msg.bot li { margin-bottom: 4px }
 .ask-msg.bot strong { color: var(--s2) }
 .ask-msg.bot code {
