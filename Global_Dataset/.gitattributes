@@ -1,0 +1,2 @@
+# These files are small: store them as normal files, not Git LFS
+*.csv !filter !diff !merge text

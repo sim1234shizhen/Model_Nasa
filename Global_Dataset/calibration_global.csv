@@ -1,0 +1,233 @@
+country,k,k_source,modis_overlap,viirs_overlap,r2_loyo,corr,r2_holdout_2024_25,holdout_total_err_pct
+Democratic Republic of the Congo,2.664,country,2148077,6164440,0.959,0.988,0.94,-15.73
+Angola,2.231,country,1455594,3441346,0.976,0.991,0.981,-7.134
+Brazil,2.317,country,1422956,3381483,0.967,0.985,0.977,7.157
+Zambia,2.562,country,906055,2385208,0.984,0.993,0.994,-2.441
+Mozambique,3.138,country,654123,2183745,0.954,0.98,0.958,-2.152
+India,4.24,country,411414,1818022,0.958,0.982,0.961,-7.44
+Central African Republic,2.625,country,609565,1675637,0.986,0.994,0.974,-15.251
+Australia,1.887,country,737355,1483680,0.84,0.955,0.879,-9.096
+South Sudan,2.155,country,607709,1407768,0.979,0.993,0.969,-14.227
+Tanzania,3.611,country,358189,1348307,0.927,0.965,0.955,-1.994
+Madagascar,4.022,country,319072,1335973,0.952,0.98,0.957,-8.905
+Russian Federation,1.763,country,678986,1327935,0.949,0.986,0.949,-14.023
+Nigeria,4.037,country,311636,1295542,0.973,0.987,0.976,-2.126
+China,2.911,country,374590,1129842,0.824,0.921,0.654,15.135
+United States,2.371,country,413984,1039588,0.698,0.955,0.649,-12.015
+Myanmar,3.817,country,254192,1039535,0.983,0.993,0.985,-0.61
+Mexico,2.572,country,297104,828554,0.971,0.99,0.972,-0.943
+Guinea,2.804,country,279179,804160,0.975,0.989,0.95,-7.11
+Venezuela,3.177,country,224792,744024,0.978,0.991,0.981,2.891
+Cameroon,3.349,country,210037,729067,0.981,0.991,0.987,-7.973
+Bolivia,2.019,country,290748,616338,0.979,0.992,0.975,-3.11
+Ethiopia,2.967,country,184505,577100,0.975,0.99,0.977,-9.678
+Argentina,2.106,country,252178,562877,0.978,0.994,0.953,-5.412
+Indonesia,3.399,country,138974,553613,0.903,0.98,0.86,-26.276
+Ghana,2.523,country,188405,552665,0.956,0.985,0.963,-14.271
+Thailand,4.835,country,108029,538704,0.981,0.991,0.979,-1.806
+Chad,2.565,country,184944,515397,0.947,0.978,0.934,-18.211
+Sudan,2.626,country,173001,487833,0.979,0.994,0.979,-9.207
+Cambodia,3.678,country,119335,467458,0.949,0.976,0.934,-2.957
+Lao PDR,2.328,country,176071,459356,0.945,0.976,0.966,-14.159
+South Africa,2.468,country,184092,453080,0.981,0.991,0.972,-4.368
+Mali,2.799,country,151023,448397,0.964,0.987,0.956,-7.963
+Canada,1.74,country,219016,411143,0.982,0.993,0.985,-7.824
+Colombia,2.901,country,113380,362293,0.953,0.985,0.966,-11.601
+Peru,3.78,country,81923,351039,0.931,0.977,0.929,-17.232
+Paraguay,2.09,country,157404,344837,0.953,0.984,0.922,-8.554
+Republic of Congo,2.682,country,115901,332363,0.969,0.989,0.988,-7.796
+Cote d Ivoire,3.044,country,91067,324141,0.894,0.958,0.936,-10.559
+Zimbabwe,2.764,country,98547,289522,0.958,0.982,0.965,-11.996
+Uganda,3.637,country,67654,275775,0.937,0.976,0.945,-14.885
+Pakistan,3.747,country,65742,271883,0.765,0.906,0.656,-8.176
+Vietnam,3.245,country,80847,252770,0.924,0.967,0.834,23.726
+Sierra Leone,2.37,country,89331,231242,0.934,0.971,0.982,-4.974
+Ukraine,2.334,country,88297,221384,0.968,0.988,0.97,-8.673
+Malawi,4.841,country,40379,199759,0.968,0.985,0.985,-0.053
+Senegal,2.246,country,80704,192170,0.967,0.988,0.948,-10.877
+Burkina Faso,2.862,country,58976,189403,0.91,0.967,0.888,2.14
+Benin,4.04,country,44549,187434,0.91,0.956,0.92,-8.496
+Kazakhstan,1.801,country,87931,169855,0.957,0.985,0.941,-21.991
+Iran,3.633,country,36944,159254,0.217,0.794,0.011,11.544
+Honduras,3.351,country,41611,156967,0.935,0.983,0.989,-9.835
+Togo,3.604,country,34389,138301,0.954,0.982,0.957,-16.421
+Papua New Guinea,4.161,country,29172,132400,0.887,0.962,0.923,-19.229
+Philippines,5.723,country,21815,126514,0.983,0.992,0.983,0.566
+Nicaragua,4.328,country,26147,119645,0.965,0.985,0.971,7.782
+Turkey,2.625,country,43364,116945,0.764,0.878,0.702,5.755
+Liberia,2.456,country,40667,116114,0.894,0.956,0.977,-5.875
+Cuba,2.872,country,36003,109927,0.984,0.994,0.987,-3.677
+Guatemala,2.626,country,38870,107045,0.961,0.984,0.992,2.21
+Nepal,4.412,country,20011,92656,0.973,0.991,0.992,-8.181
+Iraq,2.532,country,29903,89677,0.734,0.947,0.709,-15.423
+Botswana,1.609,country,45998,79012,0.982,0.994,0.969,-13.703
+Namibia,1.813,country,37112,72234,0.983,0.995,0.977,-12.298
+Italy,3.422,country,18636,68895,0.914,0.97,0.955,-13.823
+Ecuador,3.734,country,16229,68478,0.921,0.971,0.919,-19.046
+Kenya,4.63,country,13472,62230,0.921,0.964,0.874,11.383
+Algeria,2.998,country,12598,57056,-0.636,0.863,-6.462,-54.006
+Chile,2.011,country,21728,55497,0.459,0.929,0.39,-28.656
+Turkmenistan,3.393,country,9622,50610,0.035,0.725,-0.056,-48.624
+Saudi Arabia,6.328,country,7091,50289,-2.583,0.42,-1.959,-5.007
+Romania,2.673,country,17170,50165,0.969,0.99,0.955,-13.419
+Egypt,8.589,country,5109,50132,0.088,0.7,-2.32,44.987
+Guinea-Bissau,2.36,country,19193,48179,0.95,0.981,0.875,6.775
+Uzbekistan,3.739,country,10516,45464,0.762,0.918,0.797,-9.455
+Guyana,3.415,country,11849,43789,0.964,0.989,0.957,3.513
+Malaysia,3.777,country,10487,41259,0.92,0.965,0.78,13.579
+Panama,4.022,country,8556,36556,0.96,0.983,0.958,-10.472
+Dominican Republic,4.778,country,6182,33201,0.843,0.958,0.851,-6.341
+Gabon,2.584,country,11492,32719,0.903,0.965,0.917,11.755
+Syria,2.908,country,9031,31217,0.903,0.961,0.807,-16.749
+Spain,1.81,country,12529,30566,0.263,0.922,-0.025,2.354
+Bangladesh,2.43,country,9402,29709,0.891,0.959,0.928,-13.239
+Sri Lanka,6.505,country,4357,29659,0.847,0.93,0.866,-10.044
+Libya,7.425,country,3004,28735,-0.41,0.368,-0.559,-17.484
+Serbia,2.451,country,8098,24444,0.977,0.995,0.878,-26.153
+Niger,2.479,country,6914,22669,0.705,0.921,0.581,-0.485
+Belize,2.802,country,7433,22603,0.981,0.993,0.994,2.523
+Swaziland,2.753,country,8260,22032,0.946,0.975,0.969,-4.834
+France,2.415,country,6721,21689,0.426,0.872,0.519,-22.102
+Germany,2.335,country,5380,18785,0.095,0.677,-0.282,9.511
+Timor-Leste,5.642,country,2710,17457,0.938,0.974,0.704,-37.523
+Bulgaria,2.07,country,7235,17061,0.967,0.99,0.935,-13.199
+Azerbaijan,2.776,country,5530,16790,0.905,0.97,0.96,-11.149
+Oman,5.226,country,2763,16411,-0.717,0.196,-0.689,7.607
+Japan,1.796,country,5842,15987,-1.069,0.646,-1.054,-25.48
+New Zealand,4.55,country,2714,15809,0.074,0.76,-0.576,-36.673
+Costa Rica,3.419,country,4429,15648,0.971,0.987,0.993,-2.991
+Greece,2.287,country,5125,14956,0.438,0.797,0.511,-17.614
+El Salvador,3.41,country,5080,14460,0.835,0.935,0.64,48.343
+Suriname,3.554,country,3742,13865,0.93,0.967,0.797,-2.53
+Uruguay,2.913,country,4514,13854,0.945,0.976,0.892,-6.433
+Belarus,2.061,country,5480,13445,0.959,0.988,0.942,-22.244
+United Kingdom,2.617,country,2948,13137,0.208,0.868,-0.036,-8.716
+The Gambia,2.574,country,4272,12076,0.863,0.949,0.879,1.581
+Haiti,5.906,country,1607,11107,0.837,0.936,0.761,-17.669
+Bosnia and Herzegovina,2.497,country,3586,10811,0.949,0.984,0.897,-16.22
+Burundi,3.651,country,2830,10786,0.925,0.965,0.971,-4.83
+Somalia,6.367,country,1460,10511,0.535,0.783,0.618,-28.733
+Fiji,4.901,country,1707,10086,0.863,0.955,0.93,-20.48
+Kuwait,3.536,country,2231,9602,-1.098,0.291,-0.591,-8.33
+Portugal,1.299,country,5457,9602,0.78,0.955,0.604,19.857
+Morocco,3.947,country,1560,9232,-1.685,0.646,-5.434,-55.097
+Poland,3.172,country,1814,9175,0.584,0.89,0.17,-33.058
+Lesotho,2.846,country,2617,8411,0.965,0.988,0.971,-4.743
+Tunisia,3.521,country,1317,8086,0.013,0.839,0.48,-46.913
+Georgia,2.591,country,2622,8061,0.886,0.964,0.917,-10.951
+Albania,2.393,country,2520,7504,0.872,0.963,0.815,8.869
+Mongolia,1.734,country,2581,7220,0.62,0.908,0.47,-48.824
+Republic of Korea,1.746,country,2994,7045,0.109,0.76,0.338,-0.638
+Moldova,2.29,country,2295,6723,0.858,0.968,0.44,-47.69
+Macedonia Former Yugoslav Republic of,2.403,country,2070,6223,0.785,0.943,0.498,18.344
+Dem Rep Korea,2.553,country,1886,6220,0.922,0.973,0.637,-26.283
+United Arab Emirates,4.365,country,986,6099,-1.979,0.341,-5.78,-9.104
+Hungary,2.572,country,1697,6065,0.729,0.923,0.171,-34.112
+French Guiana,3.492,country,1476,5503,0.953,0.981,0.94,10.999
+Kyrgyzstan,3.049,country,1373,5326,0.875,0.968,0.904,-32.06
+Equatorial Guinea,3.113,country,1428,5325,0.793,0.905,0.846,4.263
+Mauritania,1.942,country,2177,5235,0.778,0.952,0.72,-9.912
+Armenia,3.079,country,1369,5206,0.846,0.949,0.895,-12.387
+Croatia,2.781,country,1524,5139,0.905,0.975,-0.064,-17.439
+Jamaica,4.351,country,961,4882,0.804,0.941,0.725,-29.54
+Yemen,6.773,country,455,4526,-1.058,0.244,-1.531,-24.423
+Taiwan,4.857,country,718,4514,-0.018,0.616,-0.27,-22.166
+Trinidad and Tobago,8.501,country,376,4262,0.819,0.935,0.763,0.566
+Montenegro,2.11,country,1528,4144,0.854,0.974,0.845,-32.479
+Kosovo,2.916,country,1216,3979,0.884,0.953,0.863,-10.217
+Afghanistan,4.131,country,759,3843,0.446,0.772,-0.241,-38.449
+Netherlands,3.16,country,739,3579,0.066,0.674,-0.333,21.527
+Israel,3.534,country,766,3561,0.347,0.799,0.175,3.022
+Sweden,1.919,country,898,3541,-0.107,0.952,-0.074,-65.027
+Eritrea,1.883,country,1808,3515,0.701,0.849,0.714,-23.361
+New Caledonia,3.508,country,813,3435,0.863,0.953,0.907,-17.948
+Lebanon,3.662,country,517,3340,0.538,0.915,0.835,-19.661
+Qatar,4.963,country,400,3120,-0.817,0.415,-2.122,-55.09
+Belgium,5.062,country,375,3073,-0.143,0.572,0.07,-26.333
+Rwanda,3.045,country,785,2856,0.808,0.918,0.758,-26.61
+Bahamas,2.525,country,914,2827,0.9,0.966,0.94,-14.496
+Czech Republic,3.14,country,530,2774,-0.112,0.652,-0.096,-58.932
+Jordan,2.54,global,263,2637,,,,
+Palestine,5.339,country,346,2451,0.373,0.808,0.357,-23.265
+Finland,2.098,country,611,2445,0.333,0.855,0.336,-58.535
+Norway,3.699,country,317,2380,0.42,0.901,0.031,-51.336
+Tajikistan,3.869,country,460,2354,0.323,0.76,0.305,-22.961
+Bhutan,2.317,country,803,2076,0.821,0.927,0.884,-20.748
+Bahrain,2.54,global,61,1963,,,,
+Slovakia,3.228,country,319,1701,0.005,0.681,-0.299,-50.786
+Iceland,1.2,country,500,1568,-12.779,0.727,-0.79,-88.087
+Austria,2.54,global,189,1555,,,,
+Denmark,1.717,country,513,1459,-0.103,0.568,-0.467,-20.296
+Ireland,2.54,global,278,1413,,,,
+Solomon Islands,2.54,global,100,1205,,,,
+Puerto Rico,2.54,global,183,1082,,,,
+Mauritius,2.54,global,149,1033,,,,
+Switzerland,2.54,global,149,898,,,,
+Cyprus,2.54,global,235,897,,,,
+Vanuatu,2.54,global,54,885,,,,
+Lithuania,2.54,global,234,839,,,,
+Comoros,2.54,global,106,812,,,,
+Reunion,2.54,global,13,791,,,,
+Latvia,2.54,global,284,724,,,,
+Brunei Darussalam,2.54,global,125,518,,,,
+Slovenia,2.54,global,77,377,,,,
+Antarctica,2.54,global,3,356,,,,
+Barbados,2.54,global,64,320,,,,
+Estonia,2.54,global,130,287,,,,
+Heard I and McDonald Islands,2.54,global,0,263,,,,
+Tonga,2.54,global,11,246,,,,
+Luxembourg,2.54,global,0,219,,,,
+Hong Kong,2.54,global,25,218,,,,
+Djibouti,2.54,global,195,198,,,,
+Guam,2.54,global,41,164,,,,
+Cape Verde,2.54,global,27,150,,,,
+Saint Kitts and Nevis,2.54,global,19,141,,,,
+Sao Tome and Principe,2.54,global,28,135,,,,
+Mayotte,2.54,global,8,123,,,,
+Curacao,2.54,global,0,120,,,,
+Guadeloupe,2.54,global,10,117,,,,
+Greenland,2.54,global,65,110,,,,
+Antigua and Barbuda,2.54,global,11,108,,,,
+Falkland Islands,2.54,global,20,108,,,,
+Northern Mariana Islands,2.54,global,21,103,,,,
+Dominica,2.54,global,7,97,,,,
+Malta,2.54,global,3,85,,,,
+British Virgin Islands,2.54,global,0,75,,,,
+Saint Lucia,2.54,global,3,71,,,,
+Turks and Caicos Islands,2.54,global,8,68,,,,
+Singapore,2.54,global,0,62,,,,
+Grenada,2.54,global,1,58,,,,
+Martinique,2.54,global,3,57,,,,
+United States Virgin Islands,2.54,global,2,52,,,,
+Cayman Islands,2.54,global,2,50,,,,
+French Polynesia,2.54,global,6,46,,,,
+Saint Vincent and the Grenadines,2.54,global,5,45,,,,
+Saint-Martin,2.54,global,0,33,,,,
+Niue,2.54,global,0,21,,,,
+Samoa,2.54,global,50,21,,,,
+Nauru,2.54,global,0,16,,,,
+Aruba,2.54,global,1,16,,,,
+Federated States of Micronesia,2.54,global,0,16,,,,
+Kiribati,2.54,global,2,14,,,,
+Palau,2.54,global,3,13,,,,
+French Southern and Antarctic Lands,2.54,global,0,11,,,,
+Cook Islands,2.54,global,0,8,,,,
+Montserrat,2.54,global,0,7,,,,
+Jersey,2.54,global,1,7,,,,
+Wallis and Futuna Islands,2.54,global,0,7,,,,
+United States Minor Outlying Islands,2.54,global,0,6,,,,
+Saint Helena,2.54,global,0,6,,,,
+Norfolk Island,2.54,global,0,6,,,,
+Sint Maarten,2.54,global,0,5,,,,
+Aland Islands,2.54,global,1,5,,,,
+Guernsey,2.54,global,0,5,,,,
+Seychelles,2.54,global,3,5,,,,
+Isle of Man,2.54,global,0,4,,,,
+Saint Pierre and Miquelon,2.54,global,0,4,,,,
+Liechtenstein,2.54,global,0,3,,,,
+Anguilla,2.54,global,0,3,,,,
+American Samoa,2.54,global,0,2,,,,
+San Marino,2.54,global,0,2,,,,
+Svalbard and Jan Mayen,2.54,global,1,2,,,,
+Bermuda,2.54,global,0,1,,,,
+Monaco,2.54,global,0,1,,,,
