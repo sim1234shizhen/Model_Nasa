@@ -48,7 +48,8 @@ function renderLegend(datasets) {
   }));
 }
 
-function renderSeason({ year, month, setMonth, tokens, chartTooltip }, series, sources) {
+function renderSeason(options, series, sources) {
+  const { year, month, setMonth, tokens, chartTooltip } = options;
   const totals = monthValues(series, year);
   const byRegion = sources.map(({ name, color, records }) => ({
     label: name, backgroundColor: color, cellDays: monthValues(records || [], year),
@@ -86,7 +87,8 @@ function renderSeason({ year, month, setMonth, tokens, chartTooltip }, series, s
   }
 
   $("dash-season-note").textContent = useBreakdown
-    ? useShare ? "Each region’s share of observed fire cell-days each month." : "Observed fire cell-days stacked by region, with the historical median for comparison."
+    ? useShare ? `Each ${options.scope === "World" ? "country" : "region"}’s share of observed fire cell-days each month.`
+      : `Observed fire cell-days stacked by ${options.scope === "World" ? "country" : "region"}, with the historical median for comparison.`
     : "Observed fire cell-days and the historical median. Regional breakdown unavailable for this selection.";
   $("dash-season-status").textContent = useBreakdown && totals.some((total, index) => total != null && !complete[index])
     ? "Months with incomplete regional coverage are omitted from the stacks." : "";
@@ -165,6 +167,48 @@ function loadRegion(name, getJSON) {
   return regionSeries.get(name);
 }
 
+/* Worldwide: every country's months for the selected year and the year before.
+   The top countries get their own colour; the rest are pooled as "Other countries". */
+const WORLD_TOP = 9;
+const worldYears = new Map();
+function loadWorldCountries(year, getJSON) {
+  if (!worldYears.has(year)) {
+    worldYears.set(year, getJSON(`/harmonized/countries?year=${year}`)
+      .then(({ countries }) => countries)
+      .catch((error) => {
+        worldYears.delete(year);
+        throw error;
+      }));
+  }
+  return worldYears.get(year);
+}
+
+async function loadWorldSources({ year, getJSON }) {
+  const countries = await loadWorldCountries(year, getJSON).catch(() => []);
+  const yearTotal = (months) => months.reduce((sum, row) => sum + (row.year === year ? row.harmonized : 0), 0);
+  const sorted = countries.map((entry) => ({ ...entry, total: yearTotal(entry.months) }))
+    .sort((a, b) => b.total - a.total);
+  const top = sorted.slice(0, WORLD_TOP);
+  const rest = sorted.slice(WORLD_TOP);
+  const pooled = new Map();
+  for (const { months } of rest) {
+    for (const row of months) {
+      const key = row.year * 12 + row.month;
+      const entry = pooled.get(key) ?? { year: row.year, month: row.month, harmonized: 0 };
+      entry.harmonized += row.harmonized;
+      pooled.set(key, entry);
+    }
+  }
+  const sources = top.map(({ country, months }, index) => ({
+    name: country, country: "Worldwide", color: regionColors[index % regionColors.length], records: months,
+  }));
+  if (rest.length) {
+    sources.push({ name: `Other countries (${rest.length})`, country: "Worldwide", color: "#9a9a92",
+      records: [...pooled.values()].sort((a, b) => a.year - b.year || a.month - b.month), pooled: true });
+  }
+  return { sources, ranking: sorted.map(({ country, months }) => ({ name: country, country: "Worldwide", records: months })) };
+}
+
 function loadDashboardRegions({ series, regions, scope, getJSON }) {
   return Promise.all(regions.map(async ({ region, country }, index) => {
     if (scope !== "All" && scope !== country && scope !== region) return null;
@@ -216,24 +260,34 @@ function renderRankBar(volume, share, color) {
   volume.append(track);
 }
 
-function renderLeaderboard({ year, month }, sources, yearRows) {
+const RANK_LIMIT = 10;
+function renderLeaderboard({ year, month, world }, sources, yearRows, ranking = null) {
   const monthly = rankPeriod === "month";
   const chosen = monthly ? [month] : yearRows.map((row) => row.month);
   const results = $("dash-rank-results");
   const status = $("dash-rank-status");
   $("dash-rank-period").textContent = `${monthly ? monthNames[month - 1] + " " : ""}${year} · vs the same period in ${year - 1}`;
-  const ranked = sources.filter(({ records }) => records).map(({ name, country, color, records }) => ({
-    name, country, color, total: periodTotal(records, year, chosen), previous: periodTotal(records, year - 1, chosen),
+  const colorOf = new Map(sources.map(({ name, color }) => [name, color]));
+  const toRank = (list) => list.filter(({ records }) => records).map(({ name, country, color, records }) => ({
+    name, country, color: color ?? colorOf.get(name) ?? "#9a9a92",
+    total: periodTotal(records, year, chosen), previous: periodTotal(records, year - 1, chosen),
   })).filter((row) => row.total != null).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
-  status.textContent = ranked.length === 0 ? "No regional data available for this period."
+  const ranked = toRank(sources);
+  const leaders = ranking ? toRank(ranking) : ranked;
+  const shown = ranking ? leaders.slice(0, RANK_LIMIT) : leaders;
+  status.textContent = leaders.length === 0
+    ? world ? "Sub-national breakdown is only available for Malaysia and Indonesia." : "No regional data available for this period."
+    : ranking ? `Top ${shown.length} of ${leaders.length} countries.`
     : ranked.length < sources.length ? `Data available for ${ranked.length} of ${sources.length} regions.` : "";
-  $("dash-rank-rows").replaceChildren(...ranked.map((row, index) => rankRow(row, index, ranked[0].total)));
-  results.hidden = ranked.length === 0;
+  $("dash-rank-rows").replaceChildren(...shown.map((row, index) => rankRow(row, index, shown[0].total)));
+  results.hidden = shown.length === 0;
 
-  const groups = ["Malaysia", "Indonesia"].map((name) => {
+  const groupNames = [...new Set(ranked.map((row) => row.country))];
+  const groupColors = { Malaysia: "#eb8854", Indonesia: "#55a49c", Worldwide: "#d0703f" };
+  const groups = groupNames.map((name) => {
     const regions = ranked.filter((row) => row.country === name);
     const total = regions.reduce((sum, row) => sum + row.total, 0);
-    return { name, total, regions, color: name === "Malaysia" ? "#eb8854" : "#55a49c" };
+    return { name, total, regions, color: groupColors[name] ?? "#55a49c" };
   }).sort((a, b) => b.total - a.total);
   const total = groups.reduce((sum, group) => sum + group.total, 0);
   $("dash-category-period").textContent = `${monthly ? monthNames[month - 1] + " " : ""}${year} · Share of ranked fire cell-days`;
@@ -334,10 +388,12 @@ export async function renderDashboard(options) {
   const selected = yearRows.find((row) => row.month === options.month);
   renderMetrics(series, yearRows, selected, options.year, options.month);
 
-  const sources = await loadDashboardRegions(options);
+  let sources = [], ranking = null;
+  if (options.scope === "World") ({ sources, ranking } = await loadWorldSources(options));
+  else if (!options.world) sources = await loadDashboardRegions(options);
   if (request !== dashboardRequest || !options.isVisible()) return;
   renderSeason(options, series, sources);
-  renderLeaderboard(options, sources, yearRows);
+  renderLeaderboard(options, sources, yearRows, ranking);
 
   const seasonControls = $("dash-season-controls");
   seasonControls.onclick = (event) => {
@@ -355,6 +411,6 @@ export async function renderDashboard(options) {
     for (const option of rankControls.querySelectorAll("button")) {
       option.setAttribute("aria-pressed", String(option === button));
     }
-    renderLeaderboard(options, sources, yearRows);
+    renderLeaderboard(options, sources, yearRows, ranking);
   };
 }

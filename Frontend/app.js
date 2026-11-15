@@ -1771,6 +1771,7 @@ function updateRoute(moveFocus = false) {
   const observed = page === "dashboard" && section === "calendar";   // the hotspot map has its own date picker
   const forecast = page === "forecast" || page === "haze";
   filters.querySelector("[data-timeline-filter]").hidden = page !== "explorer";
+  filters.querySelector("[data-scope-filter]").hidden = page === "explorer";   // Explorer has its own place search
   filters.querySelectorAll("[data-observed-filter]").forEach((label) => { label.hidden = !observed; });
   filters.querySelectorAll("[data-forecast-filter]").forEach((label) => { label.hidden = !forecast; });
   $("#status").hidden = (page === "data" && section !== "calibration") || page === "docs";

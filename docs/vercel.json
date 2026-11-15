@@ -1,0 +1,5 @@
+{
+  "functions": {
+    "api/consult.js": { "maxDuration": 60 }
+  }
+}
