@@ -102,6 +102,122 @@ function chartTooltip(t) {
   };
 }
 
+/* ---------- searchable dropdown ----------
+   Puts a text box over a <select>: click it to see every option, or type to
+   filter. The hidden <select> stays the source of truth: picking sets its value
+   and fires its normal "change", and any code that sets select.value (or
+   disables it, or replaces its options) updates the box too. */
+let sselSeq = 0;
+function searchableSelect(select, placeholder) {
+  if (select.dataset.searchable) return;
+  select.dataset.searchable = "1";
+  const id = "ssel-" + (++sselSeq);
+  const wrap = document.createElement("span");
+  wrap.className = "ssel";
+  wrap.dataset.for = select.id;
+  select.before(wrap);
+  const input = document.createElement("input");
+  Object.assign(input, { type: "text", autocomplete: "off", spellcheck: false, placeholder });
+  input.setAttribute("role", "combobox");
+  input.setAttribute("aria-autocomplete", "list");
+  input.setAttribute("aria-expanded", "false");
+  input.setAttribute("aria-controls", id);
+  const arrow = document.createElement("span");
+  arrow.className = "ssel-arrow"; arrow.setAttribute("aria-hidden", "true"); arrow.textContent = "▾";
+  const list = document.createElement("ul");
+  list.className = "ssel-list"; list.id = id; list.setAttribute("role", "listbox"); list.hidden = true;
+  wrap.append(input, arrow, list, select);
+  select.hidden = true; select.tabIndex = -1;
+
+  let shown = [], active = -1, typed = false;
+  const label = () => (select.selectedOptions[0]?.textContent || "").trim();
+  const options = () => [...select.options].map((o) => ({
+    value: o.value, text: o.textContent.trim(), sub: /^\s/.test(o.textContent),
+  }));
+  const syncDisabled = () => { input.disabled = select.disabled; wrap.classList.toggle("is-disabled", select.disabled); };
+
+  function render() {
+    const q = typed ? input.value.trim().toLowerCase() : "";
+    shown = options();
+    if (q) shown = shown.filter((o) => o.text.toLowerCase().includes(q))
+      .sort((a, b) => (b.text.toLowerCase().startsWith(q) - a.text.toLowerCase().startsWith(q)));
+    if (active < 0 || active >= shown.length) {
+      active = q ? (shown.length ? 0 : -1) : shown.findIndex((o) => o.value === select.value);
+    }
+    const mark = (t) => {
+      const i = q ? t.toLowerCase().indexOf(q) : -1;
+      return i < 0 ? esc(t) : esc(t.slice(0, i)) + "<mark>" + esc(t.slice(i, i + q.length)) + "</mark>" + esc(t.slice(i + q.length));
+    };
+    list.innerHTML = shown.map((o, i) => `<li role="option" id="${id}-${i}" data-i="${i}" class="${!q && o.sub ? "in-group" : ""}"
+        aria-selected="${i === active}"${o.value === select.value ? ' data-current=""' : ""}>${mark(o.text)}</li>`).join("")
+      || `<li class="ssel-empty" role="presentation">No matches</li>`;
+    list.hidden = false;
+    input.setAttribute("aria-expanded", "true");
+    if (active >= 0) {
+      input.setAttribute("aria-activedescendant", `${id}-${active}`);
+      list.querySelector(`[data-i="${active}"]`)?.scrollIntoView({ block: "nearest" });
+    }
+  }
+  function close() {
+    list.hidden = true; active = -1; typed = false;
+    input.setAttribute("aria-expanded", "false");
+    input.removeAttribute("aria-activedescendant");
+    input.value = label();
+  }
+  function pick(o) {
+    if (!o) return;
+    const changed = o.value !== select.value;
+    select.value = o.value;
+    close();
+    if (changed) select.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  const openAll = () => { typed = false; active = -1; render(); };
+
+  input.addEventListener("focus", () => { openAll(); input.select(); });
+  input.addEventListener("click", () => { if (list.hidden) openAll(); });
+  input.addEventListener("input", () => { typed = true; active = -1; render(); });
+  input.addEventListener("blur", close);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (list.hidden) { openAll(); return; }
+      if (!shown.length) return;
+      active = e.key === "ArrowDown" ? (active + 1) % shown.length : (active <= 0 ? shown.length - 1 : active - 1);
+      render();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (!list.hidden) pick(shown[active] || (shown.length === 1 ? shown[0] : null));
+    } else if (e.key === "Escape" && !list.hidden) {
+      e.preventDefault(); close();
+    }
+  });
+  // mousedown keeps focus in the box, so blur doesn't close the list before the pick
+  list.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    const li = e.target.closest("[data-i]");
+    if (li) pick(shown[+li.dataset.i]);
+  });
+  arrow.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    if (input.disabled) return;
+    if (!list.hidden) close();
+    else if (document.activeElement === input) openAll();
+    else input.focus();
+  });
+
+  // keep the box in step when code changes the select
+  const proto = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value");
+  Object.defineProperty(select, "value", {
+    configurable: true,
+    get() { return proto.get.call(this); },
+    set(v) { proto.set.call(this, v); if (list.hidden) input.value = label(); },
+  });
+  new MutationObserver(() => { syncDisabled(); if (list.hidden) input.value = label(); })
+    .observe(select, { attributes: true, attributeFilter: ["disabled"], childList: true });
+  syncDisabled();
+  input.value = label();
+}
+
 /* ---------- filters ---------- */
 function buildFilters() {
   const scope = $("#f-scope");
@@ -109,6 +225,7 @@ function buildFilters() {
   for (const r of state.regions) opts.push([r.region, `  ${r.region} (${r.country === "Malaysia" ? "MY" : "ID"})`]);
   scope.innerHTML = opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
   scope.value = state.scope;
+  searchableSelect(scope, "Type a region or country");
 
   const years = [...new Set(state.series.map((d) => d.year))];
   $("#f-year").innerHTML = years.map((y) => `<option>${y}</option>`).join("");
@@ -807,7 +924,126 @@ const PREP_ICONS = {
     <path class="prep-breeze" d="M34 12q4-2 6 1M36 16q4-2 7 1" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round"/></svg>`,
 };
 
+/* Hero "jump" buttons (Outlook, Prepare): scroll to a section on the same page.
+   Buttons, not #anchors, because the hash is used for page routing. */
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-jump]");
+  if (!b) return;
+  const target = document.getElementById(b.dataset.jump);
+  if (!target) return;
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  target.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  target.classList.remove("pg-flash"); void target.offsetWidth; target.classList.add("pg-flash");
+});
+
+/* "Open … in World": jump to the World map (#/explorer) showing the area picked
+   here. The Area filter is shared by every page, so the map opens on it. */
+function syncOpenWorld() {
+  const name = $("#haze-open-world-name");
+  if (!name) return;
+  const label = ($("#f-scope").selectedOptions[0]?.textContent || "All regions").trim();
+  name.textContent = state.scope === "All" ? "all regions" : label.replace(/\s*\((MY|ID)\)$/, "");
+  const btn = $("#haze-open-world");
+  if (!btn.dataset.bound) {
+    btn.dataset.bound = "1";
+    btn.addEventListener("click", () => { location.hash = "/explorer"; });
+  }
+}
+
+/* ---------- haze history (Prepare page) ----------
+   Yearly fire activity for the selected area from the harmonized monthly series,
+   rated against the area's own typical year. Well-known regional haze episodes
+   get a short note. */
+const HAZE_EVENTS = {
+  2006: "Fires in Sumatra and Kalimantan sent thick smoke across Malaysia and Singapore in September and October.",
+  2013: "In June, smoke from Riau in Sumatra pushed Singapore's PSI to a then-record 401, and parts of Johor in Malaysia declared an emergency.",
+  2015: "The worst haze since 1997: months of peat fires in Sumatra and Kalimantan, with schools closed across Malaysia and Singapore in September and October.",
+  2019: "Fires in Sumatra and Kalimantan brought haze to Malaysia in September; Sarawak was among the hardest hit and many schools closed.",
+  2023: "An El Niño year: fires in South Sumatra and Kalimantan brought haze back to Malaysia in October.",
+};
+// These episodes were the Sumatra / Borneo haze that reached Malaysia and Singapore;
+// the notes are shown only for the areas involved.
+const HAZE_EVENT_AREAS = new Set(["All", "Malaysia", "Indonesia", "Sumatra", "Kalimantan",
+  "Peninsular Malaysia", "Sarawak", "Sabah"]);
+let hzYear = null, hzScope = null;
+
+function hazeYears() {
+  const by = new Map();
+  for (const d of state.series) {
+    if (!by.has(d.year)) by.set(d.year, []);
+    by.get(d.year).push(d);
+  }
+  const years = [...by.entries()].filter(([, ms]) => ms.length === 12)
+    .map(([year, ms]) => ({ year, months: ms.sort((a, b) => a.month - b.month), total: ms.reduce((s, d) => s + d.harmonized, 0) }));
+  const typical = median(years.map((y) => y.total));
+  for (const y of years) {
+    y.ratio = typical ? y.total / typical : 0;
+    y.level = y.ratio >= 2 ? "sev" : y.ratio >= 1.3 ? "high" : "norm";
+    y.peak = y.months.reduce((a, d) => (d.harmonized > a.harmonized ? d : a), y.months[0]);
+  }
+  return { years, typical };
+}
+
+const HZ_LEVEL = { sev: "Severe", high: "High", norm: "Normal" };
+function renderHazeHistory() {
+  const box = $("#hz-chart");
+  if (!box) return;
+  const scopeLabel = state.scope === "All" ? "all regions" : state.scope;
+  $("#hz-area").textContent = scopeLabel;
+
+  const { years, typical } = hazeYears();
+  const events = HAZE_EVENT_AREAS.has(state.scope) ? HAZE_EVENTS : {};
+  if (!years.length) { box.innerHTML = ""; $("#hz-top").innerHTML = ""; $("#hz-detail").innerHTML = ""; return; }
+  if (hzScope !== state.scope || !years.some((y) => y.year === hzYear)) {
+    hzScope = state.scope;
+    hzYear = years.reduce((a, y) => (y.total > a.total ? y : a)).year;   // start on the worst year
+  }
+
+  // worst three years
+  const worst = [...years].sort((a, b) => b.total - a.total).slice(0, 3);
+  $("#hz-top").innerHTML = `<span class="hz-top-h">Worst years</span>` + worst.map((y, i) =>
+    `<button type="button" class="hz-top-card hz-${y.level}" data-year="${y.year}" aria-pressed="${y.year === hzYear}">
+      <span class="hz-rank">${i + 1}</span><b>${y.year}</b><small>${y.ratio.toFixed(1)}× a normal year</small></button>`).join("");
+
+  // one bar per year, with the typical-year line
+  const max = Math.max(...years.map((y) => y.total));
+  box.style.setProperty("--typ", (typical / max * 200).toFixed(1) + "px");
+  box.innerHTML = `<span class="hz-typ" aria-hidden="true"><em>Normal year</em></span>` + years.map((y) =>
+    `<button type="button" class="hz-bar hz-${y.level}" data-year="${y.year}" aria-pressed="${y.year === hzYear}"
+       title="${y.year}: ${nf.format(Math.round(y.total))} fire cell-days, ${y.ratio.toFixed(1)}× a normal year (${HZ_LEVEL[y.level]})"
+       aria-label="${y.year}, ${y.ratio.toFixed(1)} times a normal year, ${HZ_LEVEL[y.level]}${events[y.year] ? ", known haze year" : ""}">
+       <span class="hz-fill" style="height:${Math.max(2, y.total / max * 100).toFixed(2)}%">${events[y.year] ? '<i class="hz-flag" aria-hidden="true"></i>' : ""}</span>
+       <span class="hz-year">${y.year}</span></button>`).join("");
+
+  // selected year
+  const y = years.find((v) => v.year === hzYear);
+  const mMax = Math.max(...y.months.map((d) => d.harmonized), 1);
+  $("#hz-detail").innerHTML = `
+    <div class="hz-detail-head">
+      <b class="hz-detail-year">${y.year}</b>
+      <span class="hz-pill hz-${y.level}">${HZ_LEVEL[y.level]}</span>
+      <span class="hz-detail-stat"><b>${y.ratio.toFixed(1)}×</b> a normal year</span>
+      <span class="hz-detail-stat"><b>${nf.format(Math.round(y.total))}</b> fire cell-days</span>
+      <span class="hz-detail-stat">Peak: <b>${MONTHS_LONG[y.peak.month - 1]}</b></span>
+    </div>
+    <div class="hz-months" aria-label="Fire activity by month in ${y.year}">${y.months.map((d) =>
+      `<span class="hz-month${d.month === y.peak.month ? " is-peak" : ""}" title="${MONTHS_LONG[d.month - 1]} ${y.year}: ${nf.format(Math.round(d.harmonized))} fire cell-days${d.anomaly != null ? `, ${d.anomaly.toFixed(1)}× a typical ${MONTHS_LONG[d.month - 1]}` : ""}">
+        <i style="height:${Math.max(3, d.harmonized / mMax * 100).toFixed(1)}%"></i><small>${MONTHS[d.month - 1][0]}</small></span>`).join("")}</div>
+    ${events[y.year] ? `<p class="hz-event"><span aria-hidden="true">⚑</span> <b>Known haze year.</b> ${esc(events[y.year])}</p>` : ""}`;
+
+  const sec = box.closest(".hz-hist");
+  if (!sec.dataset.bound) {
+    sec.dataset.bound = "1";
+    sec.addEventListener("click", (e) => {
+      const yb = e.target.closest("[data-year]");
+      if (yb) { hzYear = +yb.dataset.year; renderHazeHistory(); }
+    });
+  }
+}
+
 function renderHaze() {
+  syncOpenWorld();
+  renderHazeHistory();
   const lv = seasonLevels();
   $("#season-chips").innerHTML = lv.map((l, i) =>
     `<span class="chip ${l}" title="${l === "hi" ? "High-risk month" : l === "mid" ? "Above-average month" : "Lower-risk month"}">${MONTHS[i]}</span>`).join("");
@@ -1152,7 +1388,7 @@ function loadOverview() {
   const observed = state.series.at(-1);
   if (!observed) return;
   const outlook = firstForecastPeriod(observed);
-  import("./overview.js?v=ui-20261115j").then(({ renderOverview }) => {
+  import("./overview.js?v=ui-20261115x").then(({ renderOverview }) => {
     if (route.page === "home") {
       renderOverview({ observed, outlook, getJSON, scope: state.scope, openExplorer(year, month) {
         setYM(year, month);
@@ -1175,7 +1411,7 @@ function loadExplorerWatchlist() {
   const outlook = forecast
     ? { year: picked.year, month: picked.month, enso: ensoFor(picked.year) }
     : firstForecastPeriod(latest);
-  import("./overview.js?v=ui-20261115j").then(({ renderExplorerWatchlist }) => {
+  import("./overview.js?v=ui-20261115x").then(({ renderExplorerWatchlist }) => {
     if (route.page !== "explorer") return;
     renderExplorerWatchlist({
       outlook, layer: forecast ? "forecast" : "observed",
@@ -1196,11 +1432,10 @@ function loadExplorerWatchlist() {
 /* ---------- navigation ---------- */
 const pages = {
   home: "Overview",
-  world: "World Fire Atlas",
-  explorer: "Explorer",
+  explorer: "World",
   dashboard: "Fire Dashboard",
-  forecast: "Fire Forecast",
-  haze: "Haze Preparedness",
+  forecast: "Fire Outlook",
+  haze: "Prepare for Haze",
   data: "Data & Methods",
   docs: "Docs",
 };
@@ -1281,9 +1516,6 @@ function renderView() {
   switch (route.page) {
     case "home":
       loadOverview();
-      break;
-    case "world":
-      if (window.renderWorld) window.renderWorld();   // world.js
       break;
     case "explorer":
       terrainModule ??= import("./hero3d.js?v=forecast-flames").catch(() => { $("#hero-status").textContent = "3D view could not load"; });

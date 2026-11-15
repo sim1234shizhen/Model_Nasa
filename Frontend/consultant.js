@@ -274,7 +274,6 @@
   const GREETING = {
     home: "Hi! Here's today's fire watch.",
     explorer: "Spin the globe, then pick a place to watch.",
-    world: "Every country's fires, 2003–2025.",
     dashboard: "Pick a year to see its burning calendar.",
     forecast: "Here's what the coming months may bring.",
     haze: "Haze on the way? I've got tips.",
