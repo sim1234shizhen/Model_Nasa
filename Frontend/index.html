@@ -4,16 +4,50 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Fire Calendar · Malaysia & Indonesia</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header class="top">
-    <div class="wrap">
-      <h1>Fire Calendar</h1>
-      <p class="sub">MODIS and VIIRS fire hotspots harmonized into one record for Malaysia and Indonesia, 2003–2025. Data: NASA FIRMS.</p>
+    <div class="wrap hudbar">
+      <div class="brand"><i></i><h1>Fire Calendar</h1></div>
+      <div class="readouts">
+        <div class="ro"><small>AREA</small><span>MALAYSIA · SUMATRA · KALIMANTAN</span></div>
+        <div class="ro"><small>SENSORS</small><span>MODIS C6.1 · VIIRS 375 M</span></div>
+        <div class="ro"><small>HARMONIZED RECORD</small><span>2003 – 2025</span></div>
+        <div class="ro"><small>DATA</small><span>NASA FIRMS</span></div>
+      </div>
     </div>
   </header>
+
+  <section class="hero" aria-label="3D view of fire activity in the selected month">
+    <div id="hero3d"></div>
+    <div id="hero-labels"></div>
+    <div class="hero-tip" id="hero-tip" hidden></div>
+    <div class="hero-panel hero-intro">
+      <div class="eyebrow">NASA Space Apps Challenge 2026<br>Harmonization of MODIS and VIIRS Hot Spots</div>
+      <p>MODIS and VIIRS fire hotspots harmonized into one record for Malaysia and Indonesia, 2003–2025.</p>
+    </div>
+    <div class="hero-panel hero-read" aria-live="polite">
+      <div class="k" id="hero-when">Loading the map</div>
+      <div class="v" id="hero-count">–</div>
+      <div class="d" id="hero-detail"></div>
+      <ul class="hero-legend" aria-label="Days with fire in a cell that month">
+        <li><i class="lv0"></i><span>Light · 1–2 days</span><b id="hero-n0">–</b></li>
+        <li><i class="lv1"></i><span>Moderate · 3–7 days</span><b id="hero-n1">–</b></li>
+        <li><i class="lv2"></i><span>Heavy · 8+ days</span><b id="hero-n2">–</b></li>
+      </ul>
+      <div class="pick" id="hero-pick" hidden></div>
+      <button type="button" class="hero-reset" id="hero-reset" hidden>Reset view</button>
+      <button type="button" class="hero-reset" id="hero-mode">Show 3D columns</button>
+      <div class="fine">Click a level above to hide or show it. Hover a cell to read it.</div>
+      <div class="fine">One cell or column per grid cell that had fire; in 3D, taller means more days. Numbers on the right are cells. Imagery: <span id="hero-img">NASA Blue Marble</span>. Terrain height is exaggerated.</div>
+    </div>
+    <div class="hero-hint"><span class="hero-scale" id="hero-scale"></span>CLICK THE MAP TO ZOOM IN · DRAG TO ROTATE · CHANGE AREA, YEAR AND MONTH BELOW</div>
+  </section>
 
   <main class="wrap">
     <div class="filters" role="group" aria-label="Filters">
@@ -178,6 +212,7 @@
     <footer class="foot">
       <p><strong>Method.</strong> Every hotspot is snapped to a 0.05° grid. A cell that burns on a given day counts once, as one <em>fire cell-day</em>, however many pixels detect it. This evens out the resolution gap between VIIRS (375 m) and MODIS (1 km). For each region, either a linear or a power-law model is fitted on the overlap months. It is validated by leaving out one year at a time, and the model with the lower error is kept. "vs typical" compares each month with the median of the same calendar month across 2003–2025.</p>
       <p>Hotspot data: NASA FIRMS (MODIS C6.1, VIIRS S-NPP 375 m). Basemap © Esri, © OpenStreetMap contributors.</p>
+      <p>3D view: NASA GIBS Blue Marble imagery, AWS Terrain Tiles (Mapzen Terrarium), Natural Earth boundaries, rendered with three.js.</p>
     </footer>
   </main>
 
@@ -186,5 +221,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="app.js"></script>
+  <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+  <script type="module" src="hero3d.js"></script>
 </body>
 </html>

@@ -16,7 +16,7 @@ const $ = (s) => document.querySelector(s);
 const nf = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const compact = (v) => new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(v);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const isDark = () => window.matchMedia("(prefers-color-scheme: dark)").matches;
+const isDark = () => true; // the HUD theme is dark only
 const ym = (d) => d.year * 12 + d.month;
 
 function tokens() {
@@ -28,13 +28,13 @@ function tokens() {
     grid: v("--grid"), axis: v("--axis"), border: v("--border"), s1: v("--s1"), s2: v("--s2"),
     band: v("--band"), select: v("--select"), empty: v("--empty"), eraOld: v("--era-old"),
     // sequential (blue): near-zero recedes toward the surface in both modes
-    seq: dark ? ["#1e2b3c", "#184f95", "#2a78d6", "#5598e7", "#b7d3f6"]
+    seq: dark ? ["#0b2531", "#0f5a78", "#1ea3cf", "#5fd4f5", "#c8f2ff"]
               : ["#cde2fb", "#86b6ef", "#3987e5", "#1c5cab", "#0d366b"],
     // second sequential context (map) takes orange
-    fire: dark ? ["#3a2219", "#8a3a17", "#d95926", "#ef8c5f", "#f9c9b1"]
+    fire: dark ? ["#2b1a10", "#8a3a17", "#e0701f", "#ffa53d", "#ffe0a3"]
                : ["#fbe0d3", "#f4a37f", "#eb6834", "#b8461a", "#7a2a0b"],
     // diverging: blue (less than usual) <-> gray <-> red (more than usual)
-    div: dark ? ["#5598e7", "#2b4a70", "#383835", "#7a3434", "#e66767"]
+    div: dark ? ["#38d6ff", "#1c5568", "#16303c", "#8a3f1d", "#ff8a3d"]
               : ["#1c5cab", "#86b6ef", "#f0efec", "#f0a09f", "#b8302f"],
   };
 }
