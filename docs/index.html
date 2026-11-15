@@ -3,62 +3,114 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Fire Calendar · Malaysia & Indonesia</title>
+  <meta name="description" content="Explore harmonized NASA fire hotspot data for Malaysia and Indonesia from 2003 to 2025.">
+  <title>Fire Calendar · Malaysia &amp; Indonesia</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body class="map-page">
+  <a class="skip" href="#main">Skip to content</a>
   <header class="top">
-    <div class="wrap hudbar">
-      <div class="brand"><i></i><h1>Fire Calendar</h1></div>
-      <div class="readouts">
-        <div class="ro"><small>AREA</small><span>MALAYSIA · SUMATRA · KALIMANTAN</span></div>
-        <div class="ro"><small>SENSORS</small><span>MODIS C6.1 · VIIRS 375 M</span></div>
-        <div class="ro"><small>HARMONIZED RECORD</small><span>2003 – 2025</span></div>
-        <div class="ro"><small>DATA</small><span>NASA FIRMS</span></div>
-      </div>
+    <div class="wrap top-inner">
+      <a class="brand" href="#/"><span class="brand-mark" aria-hidden="true">▦</span>Fire Calendar</a>
+      <nav class="primary-nav" aria-label="Main navigation">
+        <a href="#/" data-nav="home" aria-current="page">Overview</a>
+        <a href="#/explore" data-nav="explore">Explorer</a>
+        <a href="#/forecast" data-nav="forecast">Forecast</a>
+        <a href="#/haze" data-nav="haze">Haze</a>
+        <a href="#/data" data-nav="data">Data</a>
+      </nav>
+      <span class="project-label">NASA SPACE APPS 2026</span>
     </div>
   </header>
 
-  <section class="hero" aria-label="3D view of fire activity in the selected month">
-    <div id="hero3d"></div>
-    <div id="hero-labels"></div>
-    <div class="hero-tip" id="hero-tip" hidden></div>
-    <div class="hero-panel hero-intro">
-      <div class="eyebrow">NASA Space Apps Challenge 2026<br>Harmonization of MODIS and VIIRS Hot Spots</div>
-      <p>MODIS and VIIRS fire hotspots harmonized into one record for Malaysia and Indonesia, 2003–2025.</p>
-    </div>
-    <div class="hero-panel hero-read" aria-live="polite">
-      <div class="k" id="hero-when">Loading the map</div>
-      <div class="v" id="hero-count">–</div>
-      <div class="d" id="hero-detail"></div>
-      <ul class="hero-legend" aria-label="Days with fire in a cell that month">
-        <li><i class="lv0"></i><span>Light · 1–2 days</span><b id="hero-n0">–</b></li>
-        <li><i class="lv1"></i><span>Moderate · 3–7 days</span><b id="hero-n1">–</b></li>
-        <li><i class="lv2"></i><span>Heavy · 8+ days</span><b id="hero-n2">–</b></li>
-      </ul>
-      <div class="pick" id="hero-pick" hidden></div>
-      <button type="button" class="hero-reset" id="hero-reset" hidden>Reset view</button>
-      <button type="button" class="hero-reset" id="hero-mode">Show 3D columns</button>
-      <div class="fine">Click a level above to hide or show it. Hover a cell to read it.</div>
-      <div class="fine">One cell or column per grid cell that had fire; in 3D, taller means more days. Numbers on the right are cells. Imagery: <span id="hero-img">NASA Blue Marble</span>. Terrain height is exaggerated.</div>
-    </div>
-    <div class="hero-hint"><span class="hero-scale" id="hero-scale"></span>CLICK THE MAP TO ZOOM IN · DRAG TO ROTATE · CHANGE AREA, YEAR AND MONTH BELOW</div>
-  </section>
+  <main class="wrap" id="main" tabindex="-1">
+    <noscript><p class="callout">Enable JavaScript to navigate and use the interactive maps and charts.</p></noscript>
+    <p id="status" class="status" role="status"></p>
+    <section class="map-overview" data-page="home" aria-labelledby="home-title">
+      <div class="hero" role="region" aria-label="3D fire hotspot map">
+        <div id="hero3d"></div>
+        <div id="hero-labels"></div>
+        <div class="hero-tip" id="hero-tip" hidden></div>
+      </div>
 
-  <main class="wrap">
-    <div class="filters" role="group" aria-label="Filters">
-      <label>Area <select id="f-scope"></select></label>
-      <label>Year <select id="f-year"></select></label>
-      <label>Month <select id="f-month"></select></label>
-      <span id="status" class="status" role="status"></span>
-    </div>
+      <div class="map-toolbar">
+        <div>
+          <h1 id="home-title" tabindex="-1">Fire activity</h1>
+          <p>Malaysia &amp; Indonesia · 2003–2025</p>
+        </div>
+        <div data-filters></div>
+      </div>
 
-    <section class="tiles" id="tiles" aria-label="Key figures"></section>
+      <aside class="hero-read" aria-label="Hotspot details and map options">
+        <div class="hero-summary" aria-live="polite">
+          <div class="k" id="hero-when">Loading the map</div>
+          <div class="v" id="hero-count">–</div>
+          <div class="d" id="hero-detail"></div>
+          <div class="pick" id="hero-pick" hidden></div>
+        </div>
+        <details class="hero-options">
+          <summary>Legend &amp; map controls</summary>
+          <ul class="hero-legend" aria-label="Days with fire in a cell that month">
+            <li><i class="lv0"></i><span>Light · 1–2 days</span><b id="hero-n0">–</b></li>
+            <li><i class="lv1"></i><span>Moderate · 3–7 days</span><b id="hero-n1">–</b></li>
+            <li><i class="lv2"></i><span>Heavy · 8+ days</span><b id="hero-n2">–</b></li>
+          </ul>
+          <div class="fine">Select a level to show or hide it. Taller columns indicate more days of fire.</div>
+        </details>
+        <div class="hero-buttons">
+          <button type="button" class="hero-reset" id="hero-mode">Show 3D columns</button>
+          <button type="button" class="hero-reset" id="hero-reset" hidden>Reset view</button>
+        </div>
+      </aside>
 
+      <div class="hero-hint">
+        <div class="hero-gestures">
+          <span class="hero-scale" id="hero-scale" hidden></span>
+          <span>Click or tap to zoom · Drag to rotate</span>
+        </div>
+        <div class="hero-credit">
+          <span id="hero-img">NASA Blue Marble</span> · Terrain height exaggerated
+        </div>
+      </div>
+    </section>
+
+    <section data-page="explore" aria-labelledby="explore-title" hidden>
+      <div class="page-head">
+        <p class="eyebrow">2003–2025 observations</p>
+        <h1 id="explore-title" tabindex="-1">Fire Explorer</h1>
+        <p class="lead">Explore regional fire seasons, compare years, and locate satellite-detected hotspots.</p>
+      </div>
+      <nav class="section-nav" aria-label="Explorer sections">
+        <a href="#/explore?section=calendar">Burning calendar</a>
+        <a href="#/explore?section=hotspots">Hotspot map</a>
+        <a href="#/explore?section=history">Historical comparison</a>
+      </nav>
+      <div data-filters></div>
+      <div data-section="calendar">
+        <section class="tiles" id="tiles" aria-label="Key figures"></section>
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>Burning calendar</h2>
+            <p class="note" id="cal-note"></p>
+          </div>
+          <div class="seg" role="radiogroup" aria-label="Calendar colour">
+            <button type="button" data-mode="activity" aria-pressed="true">Activity</button>
+            <button type="button" data-mode="anomaly" aria-pressed="false">vs typical</button>
+          </div>
+        </div>
+        <div class="cal" id="cal"></div>
+        <div class="scale" id="cal-legend"></div>
+        <a class="panel-link" href="#/explore?section=hotspots">View selected month on the map <span aria-hidden="true">→</span></a>
+        <details class="table-view">
+          <summary>Show as table</summary>
+          <div class="table-wrap" id="cal-table"></div>
+        </details>
+      </section>
     <section class="card">
       <div class="card-head">
         <div>
@@ -73,27 +125,8 @@
       <div class="legend" id="ts-legend"></div>
       <div class="chart-box"><canvas id="ts" aria-label="Monthly fire activity line chart" role="img"></canvas></div>
     </section>
-
-    <div class="grid2">
-      <section class="card">
-        <div class="card-head">
-          <div>
-            <h2>Burning calendar</h2>
-            <p class="note" id="cal-note"></p>
-          </div>
-          <div class="seg" role="radiogroup" aria-label="Calendar colour">
-            <button type="button" data-mode="activity" aria-pressed="true">Activity</button>
-            <button type="button" data-mode="anomaly" aria-pressed="false">vs typical</button>
-          </div>
-        </div>
-        <div class="cal" id="cal"></div>
-        <div class="scale" id="cal-legend"></div>
-        <details class="table-view">
-          <summary>Show as table</summary>
-          <div class="table-wrap" id="cal-table"></div>
-        </details>
-      </section>
-
+      </div>
+      <div data-section="hotspots" hidden>
       <section class="card">
         <div class="card-head">
           <div>
@@ -111,9 +144,8 @@
         <div id="map" class="map"></div>
         <div class="scale" id="map-legend"></div>
       </section>
-    </div>
-
-    <div class="grid2">
+      </div>
+      <div data-section="history" hidden>
       <section class="card">
         <div class="card-head">
           <div><h2>How does a month compare with history?</h2></div>
@@ -121,44 +153,27 @@
         <div class="filters-inline">
           <label>Month <select id="h-month"></select></label>
           <label>Year <select id="h-year"></select></label>
-          <span class="note">Tip: click any calendar square or bar.</span>
+          <span class="note">Select a bar to change the comparison year.</span>
         </div>
         <div class="legend" id="hist-legend"></div>
         <div class="chart-box short"><canvas id="hist" aria-label="Same month across all years bar chart" role="img"></canvas></div>
         <div class="callout" id="hist-callout"></div>
       </section>
+      </div>
+    </section>
 
-      <section class="card">
-        <div class="card-head">
-          <div>
-            <h2>Haze preparedness for this area</h2>
-            <p class="note">Typical fire season, based on the 2003–2025 median of each calendar month. Smoke from these fires can reach Malaysia and Singapore within days, depending on the winds.</p>
-          </div>
-        </div>
-        <div class="chip-row" id="season-chips" aria-label="Typical fire season by month"></div>
-        <p class="risk-line" id="season-line"></p>
-        <div id="outlook-wrap" hidden>
-          <div class="chip-label" id="outlook-label"></div>
-          <div class="chip-row" id="outlook-chips" aria-label="Forecast chance of above-normal burning by month"></div>
-          <p class="note" id="outlook-line"></p>
-        </div>
-        <div class="callout prep">
-          <h3 id="prep-title">Before the high-risk months</h3>
-          <ul id="prep-list"></ul>
-          <p class="fine">General guidance only, not medical advice. Fire counts show where and when burning happens, not the air quality where you are.</p>
-        </div>
-      </section>
-    </div>
-
+    <section data-page="forecast" aria-labelledby="forecast-title" hidden>
+      <div class="page-head">
+        <p class="eyebrow">2026–2027 outlook</p>
+        <h1 id="forecast-title" tabindex="-1">Fire Forecast</h1>
+        <p class="lead">See how much fire activity is expected each month and which areas are most likely to burn.</p>
+      </div>
+      <div data-filters></div>
     <section class="card" id="forecast-card">
       <div class="card-head">
         <div>
           <h2>Fire outlook: forecast</h2>
           <p class="note">Forecast of monthly fire activity after the data ends (Dec 2025). It combines the recent seasonal pattern with the El Niño index (NOAA ONI). El Niño brings drought to Indonesia and Borneo and drove the 2015, 2019 and 2023 haze seasons.</p>
-        </div>
-        <div class="controls">
-          <label class="inline">Year <select id="fc-year"></select></label>
-          <label class="inline">El Niño <select id="fc-enso"></select></label>
         </div>
       </div>
       <p class="enso-line" id="enso-line"></p>
@@ -191,7 +206,71 @@
         <p class="note" id="where-skill"></p>
       </div>
     </section>
+    </section>
 
+    <section data-page="haze" aria-labelledby="haze-title" hidden>
+      <div class="page-head">
+        <h1 id="haze-title" tabindex="-1">Haze Preparedness</h1>
+        <p class="lead">Identify the months with the highest fire risk and prepare for the haze season.</p>
+      </div>
+      <div data-filters></div>
+      <p class="status" id="haze-status" role="status"></p>
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>Haze preparedness for this area</h2>
+            <p class="note">Typical fire season, based on the 2003–2025 median of each calendar month. Smoke from these fires can reach Malaysia and Singapore within days, depending on the winds.</p>
+          </div>
+        </div>
+        <div class="chip-row" id="season-chips" aria-label="Typical fire season by month"></div>
+        <p class="risk-line" id="season-line"></p>
+        <div id="outlook-wrap" hidden>
+          <div class="chip-label" id="outlook-label"></div>
+          <div class="chip-row" id="outlook-chips" aria-label="Forecast chance of above-normal burning by month"></div>
+          <p class="note" id="outlook-line"></p>
+        </div>
+        <div class="callout prep">
+          <h3 id="prep-title">Before the high-risk months</h3>
+          <ul id="prep-list"></ul>
+          <p class="fine">General guidance only, not medical advice. Fire counts show where and when burning happens, not the air quality where you are.</p>
+        </div>
+      </section>
+    </section>
+
+    <section data-page="data" aria-labelledby="data-title" hidden>
+      <div class="page-head">
+        <h1 id="data-title" tabindex="-1">Data &amp; Methods</h1>
+        <p class="lead">The data behind Fire Calendar, how the sensors are harmonized, and how the calibration is tested.</p>
+      </div>
+      <div class="data-layout">
+        <nav class="section-nav data-nav" aria-label="Data sections">
+          <a href="#/data?section=sources">Data sources</a>
+          <a href="#/data?section=methods">Harmonization method</a>
+          <a href="#/data?section=calibration">Calibration results</a>
+        </nav>
+        <div data-section="sources">
+          <section class="card source-card">
+            <h2>Data sources</h2>
+            <dl class="sources">
+              <div><dt><a href="https://firms.modaps.eosdis.nasa.gov/">NASA FIRMS <span aria-hidden="true">↗</span></a></dt><dd>Active fire detections from MODIS Collection 6.1 (1 km) and VIIRS S-NPP (375 m).</dd></div>
+              <div><dt><a href="https://www.cpc.ncep.noaa.gov/data/indices/oni.ascii.txt">NOAA Climate Prediction Center <span aria-hidden="true">↗</span></a></dt><dd>The Oceanic Niño Index used in fire forecasts.</dd></div>
+              <div><dt>Map imagery and terrain</dt><dd>Esri basemap, OpenStreetMap contributors, NASA GIBS Blue Marble imagery, AWS Terrain Tiles (Mapzen Terrarium), and Natural Earth boundaries.</dd></div>
+            </dl>
+          </section>
+        </div>
+        <div data-section="methods" hidden>
+          <section class="card source-card">
+            <h2>Harmonization method</h2>
+            <ol class="method-steps">
+              <li><strong>Count fire cell-days.</strong> Hotspots are placed on a 0.05° grid. Each cell with a fire detection counts once per day, regardless of how many pixels detect it.</li>
+              <li><strong>Calibrate older observations.</strong> For each region, a linear model and a power-law model are fitted using the months when both MODIS and VIIRS observed, from February 2012 through 2025.</li>
+              <li><strong>Validate across years.</strong> Each overlap year is held out in turn. The model with the lower error on held-out years converts the older MODIS counts to the VIIRS scale.</li>
+              <li><strong>Measure departures from typical activity.</strong> Each month is compared with the median for the same calendar month across 2003–2025.</li>
+            </ol>
+            <a href="#/data?section=calibration">View calibration results <span aria-hidden="true">→</span></a>
+          </section>
+        </div>
+        <div data-section="calibration" hidden>
     <section class="card">
       <div class="card-head">
         <div>
@@ -208,21 +287,31 @@
         </div>
       </div>
     </section>
+        </div>
+      </div>
+    </section>
 
-    <footer class="foot">
-      <p><strong>Method.</strong> Every hotspot is snapped to a 0.05° grid. A cell that burns on a given day counts once, as one <em>fire cell-day</em>, however many pixels detect it. This evens out the resolution gap between VIIRS (375 m) and MODIS (1 km). For each region, either a linear or a power-law model is fitted on the overlap months. It is validated by leaving out one year at a time, and the model with the lower error is kept. "vs typical" compares each month with the median of the same calendar month across 2003–2025.</p>
-      <p>Hotspot data: NASA FIRMS (MODIS C6.1, VIIRS S-NPP 375 m). Basemap © Esri, © OpenStreetMap contributors.</p>
-      <p>3D view: NASA GIBS Blue Marble imagery, AWS Terrain Tiles (Mapzen Terrarium), Natural Earth boundaries, rendered with three.js.</p>
-    </footer>
+    <div id="filters" class="filters" role="group" aria-label="Filters" hidden>
+      <label>Area <select id="f-scope" disabled></select></label>
+      <label data-observed-filter>Year <select id="f-year" disabled></select></label>
+      <label data-observed-filter>Month <select id="f-month" disabled></select></label>
+      <label data-forecast-filter hidden>Forecast year <select id="fc-year" disabled></select></label>
+      <label data-forecast-filter hidden>El Niño <select id="fc-enso" disabled></select></label>
+    </div>
   </main>
 
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <span>Fire Calendar <span class="footer-dot">·</span> NASA Space Apps Challenge 2026</span>
+      <a href="#/data?section=sources">Data sources and credits</a>
+    </div>
+  </footer>
   <div id="tip" class="tip" role="tooltip" hidden></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="static-api.js"></script>
-  <script src="app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
   <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
-  <script type="module" src="hero3d.js"></script>
+  <script src="static-api.js" defer></script>
+  <script src="app.js" defer></script>
 </body>
 </html>

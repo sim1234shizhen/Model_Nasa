@@ -48,7 +48,7 @@ async function start() {
   labelHost.appendChild(labels.domElement);
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x03080d, 0.016);
+  scene.fog = new THREE.FogExp2(0xeef4f7, 0.009);
   const camera = new THREE.PerspectiveCamera(36, 2, 0.1, 160);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true; controls.dampingFactor = 0.08;
@@ -104,7 +104,7 @@ async function start() {
   wg.setAttribute("position", new THREE.Float32BufferAttribute(wp, 3));
   wg.setAttribute("color", new THREE.Float32BufferAttribute(wc, 3));
   world.add(new THREE.Mesh(wg, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })));
-  const grid = new THREE.GridHelper(120, 240, 0x0e3a4c, 0x0a2533);
+  const grid = new THREE.GridHelper(120, 240, 0xaabecb, 0xbcced8);
   grid.position.y = BASE - 0.02; grid.material.transparent = true; grid.material.opacity = 0.5; scene.add(grid);
 
   // ---- region outlines ----
@@ -272,6 +272,7 @@ async function start() {
     });
   }
   setInterval(() => {
+    if (!host.clientWidth) return;
     const y = +selYear.value, m = +selMonth.value, sc = selScope.value || "All";
     if (y && m) { focus(sc); load(y, m, sc, cellFor(sc)); }
   }, 600);
@@ -285,7 +286,11 @@ async function start() {
     const pad = Math.min(1, halfW / 6);   // smaller margin when zoomed in
     return Math.max((halfW + 0.6 * pad) / (Math.tan(v) * camera.aspect), (halfH + 0.4 * pad) * 0.7 / Math.tan(v));
   };
-  const place = () => { if (!userMoved) camera.position.copy(TARGET).addScaledVector(dir, dist); };
+  const place = () => {
+    // Portrait layouts move the camera farther back to fit the full region.
+    scene.fog.density = Math.min(0.009, 0.25 / dist);
+    if (!userMoved) camera.position.copy(TARGET).addScaledVector(dir, dist);
+  };
   function resize() {
     const w = host.clientWidth, h = host.clientHeight; if (!w || !h) return;
     renderer.setSize(w, h); labels.setSize(w, h);
@@ -324,7 +329,7 @@ async function start() {
   if (elReset) elReset.addEventListener("click", () => { local = null; focus(scopeShown, true); describe(); });
   // legend rows are switches: click one to hide or show that class
   document.querySelectorAll(".hero-legend li").forEach((li, i) => {
-    li.setAttribute("role", "button"); li.tabIndex = 0; li.title = "Click to hide or show";
+    li.setAttribute("role", "button"); li.tabIndex = 0; li.setAttribute("aria-pressed", "true"); li.title = "Click to hide or show";
     const flip = () => { hidden[i] = !hidden[i]; li.classList.toggle("off", hidden[i]); li.setAttribute("aria-pressed", String(!hidden[i])); drawCols(); };
     li.addEventListener("click", flip);
     li.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } });
@@ -361,6 +366,7 @@ async function start() {
     const pxPerDeg = Math.abs(sb.x - sa.x) / 2 * host.clientWidth; if (!(pxPerDeg > 0)) return;
     const pxPerKm = pxPerDeg / 111.3;
     const km = [10, 20, 50, 100, 200, 500, 1000].find((k) => k * pxPerKm >= 70) || 1000;
+    elScale.hidden = false;
     elScale.style.width = Math.round(km * pxPerKm) + "px"; elScale.textContent = km + " km";
   }
 

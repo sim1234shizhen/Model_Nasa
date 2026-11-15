@@ -16,26 +16,18 @@ const $ = (s) => document.querySelector(s);
 const nf = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const compact = (v) => new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(v);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const isDark = () => true; // the HUD theme is dark only
 const ym = (d) => d.year * 12 + d.month;
 
 function tokens() {
   const cs = getComputedStyle(document.documentElement);
   const v = (n) => cs.getPropertyValue(n).trim();
-  const dark = isDark();
   return {
     surface: v("--surface"), ink: v("--ink"), ink2: v("--ink-2"), muted: v("--muted"),
     grid: v("--grid"), axis: v("--axis"), border: v("--border"), s1: v("--s1"), s2: v("--s2"),
     band: v("--band"), select: v("--select"), empty: v("--empty"), eraOld: v("--era-old"),
-    // sequential (blue): near-zero recedes toward the surface in both modes
-    seq: dark ? ["#0b2531", "#0f5a78", "#1ea3cf", "#5fd4f5", "#c8f2ff"]
-              : ["#cde2fb", "#86b6ef", "#3987e5", "#1c5cab", "#0d366b"],
-    // second sequential context (map) takes orange
-    fire: dark ? ["#2b1a10", "#8a3a17", "#e0701f", "#ffa53d", "#ffe0a3"]
-               : ["#fbe0d3", "#f4a37f", "#eb6834", "#b8461a", "#7a2a0b"],
-    // diverging: blue (less than usual) <-> gray <-> red (more than usual)
-    div: dark ? ["#38d6ff", "#1c5568", "#16303c", "#8a3f1d", "#ff8a3d"]
-              : ["#1c5cab", "#86b6ef", "#f0efec", "#f0a09f", "#b8302f"],
+    seq: ["#e1eefc", "#9dcaf3", "#508ac4", "#245f9c", "#153656"],
+    fire: ["#f7ceae", "#ed9a65", "#da5a25", "#a93413", "#72200a"],
+    div: ["#245f9c", "#9dcaf3", "#f2f1ec", "#f3a39b", "#a72f2f"],
   };
 }
 
@@ -152,26 +144,32 @@ function setYM(year, month) {
   state.year = year;
   state.month = month;
   syncFilters();
-  renderTiles();
-  if (tsChart) tsChart.update("none");
-  renderCal();
-  renderHist();
-  loadMap();
+  if (activeSection("explore", "calendar")) {
+    renderTiles();
+    tsChart?.update("none");
+    renderCal();
+  }
+  if (activeSection("explore", "history")) renderHist();
+  if (activeSection("explore", "hotspots")) loadMap();
 }
 
+let scopeRequest = 0;
 async function changeScope(scope) {
-  state.scope = scope;
+  const request = ++scopeRequest;
   setStatus("Loading…");
   try {
-    state.series = (await getJSON(`/harmonized?scope=${encodeURIComponent(scope)}`)).series;
-    setStatus("");
-  } catch (e) { setStatus(e.message, true); return; }
-  const single = state.regions.find((r) => r.region === scope);
-  if (single) state.calibRegion = single.region;
-  renderAll();
-  fitMap();
-  loadMap();
-  loadForecast();
+    const data = await getJSON(`/harmonized?scope=${encodeURIComponent(scope)}`);
+    if (request !== scopeRequest) return;
+    state.series = data.series;
+  } catch (e) {
+    if (request !== scopeRequest) return;
+    $("#f-scope").value = state.scope;
+    setStatus(e.message, true);
+    return;
+  }
+  state.scope = scope;
+  setStatus("");
+  renderView();
 }
 
 /* ---------- KPI tiles ---------- */
@@ -379,7 +377,7 @@ function renderCal() {
   cal.innerHTML = html;
 
   if (state.calMode === "activity") {
-    $("#cal-note").textContent = "Fire cell-days per month (log colour scale). Stronger colour means more burning. Click a cell to show it on the map.";
+    $("#cal-note").textContent = "Fire cell-days per month (log colour scale). Stronger colour means more burning.";
     $("#cal-legend").innerHTML = `<span>≤${compact(lo)}</span><span class="bar" style="background:${gradient(t.seq)}"></span><span>${compact(max)} cell-days</span>`;
   } else {
     $("#cal-note").textContent = "Each month compared with the median of the same month across all years. Red means more burning than usual, blue means less.";
@@ -408,7 +406,9 @@ function initMap() {
   setBasemap();
   fitMap();
   // re-bin when zooming changes the sensible cell size
-  map.on("zoomend", () => { if (cellFor(map.getZoom()) !== lastCell) loadMap(); });
+  map.on("zoomend", () => {
+    if (activeSection("explore", "hotspots") && cellFor(map.getZoom()) !== lastCell) loadMap();
+  });
 }
 // grid cell (degrees) that stays a few pixels wide at the current zoom
 const cellFor = (z) => (z < 5.5 ? 0.25 : z < 7 ? 0.1 : 0.05);
@@ -416,8 +416,7 @@ let lastCell = null;
 function setBasemap() {
   if (baseLayer) map.removeLayer(baseLayer);
   // Esri gray canvas basemap - free, no API key
-  const style = isDark() ? "World_Dark_Gray_Base" : "World_Light_Gray_Base";
-  baseLayer = L.tileLayer(`https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/${style}/MapServer/tile/{z}/{y}/{x}`, {
+  baseLayer = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", {
     attribution: "Basemap &copy; Esri, HERE, Garmin, &copy; OpenStreetMap contributors",
     maxZoom: 16,
   }).addTo(map);
@@ -470,9 +469,7 @@ let scChart = null;
 const predict = (c, m) => (c.model === "linear" ? c.k * m : c.a * Math.pow(m, c.b));
 
 async function renderCalib() {
-  const single = state.regions.find((r) => r.region === state.scope);
-  $("#calib-pick-wrap").hidden = !!single;
-  const region = single ? single.region : state.calibRegion;
+  const region = state.calibRegion;
   $("#calib-pick").value = region;
 
   // table
@@ -486,7 +483,11 @@ async function renderCalib() {
   $("#calib-foot").textContent = "M = MODIS fire cell-days per month. R² and error come from leave-one-year-out validation (each year predicted by a model fitted without it). Error is the median absolute % error per month; the last column shows it for the linear and power models, and the lower one is used.";
 
   let d;
-  try { d = await getJSON(`/calibration/points?region=${encodeURIComponent(region)}`); } catch (e) { setStatus(e.message, true); return; }
+  try { d = await getJSON(`/calibration/points?region=${encodeURIComponent(region)}`); } catch (e) {
+    if (activeSection("data", "calibration") && region === state.calibRegion) setStatus(e.message, true);
+    return;
+  }
+  if (region !== state.calibRegion) return;
   const c = d.calibration, t = tokens();
   const pts = d.points.filter((p) => p.modis > 0 && p.viirs > 0);
   const xs = pts.map((p) => p.modis);
@@ -690,9 +691,12 @@ function fillEnsoOptions() {
 
 async function loadForecast() {
   const id = ++fcReq;
-  loadWhere();
+  const showMap = route.page === "forecast";
+  if (showMap) loadWhere();
   const q = (year, enso) => `/forecast?${new URLSearchParams({ scope: state.scope, year, enso })}`;
-  $("#fc-notes").textContent = "Computing forecast…";
+  const status = showMap ? $("#fc-notes") : $("#haze-status");
+  status.textContent = "Computing forecast…";
+  $("#outlook-wrap").hidden = true;
   try {
     const main = await getJSON(q(state.fc.year, state.fc.enso));
     // for the 2nd year, also fetch the 1st so the chart has no gap
@@ -703,11 +707,12 @@ async function loadForecast() {
     state.fc.data = main;
     state.fc.prev = prev;
   } catch (e) {
-    if (id === fcReq) $("#fc-notes").textContent = `Forecast unavailable: ${e.message}`;
+    if (id === fcReq) status.textContent = `Forecast unavailable: ${e.message}`;
     return;
   }
-  renderForecast();
-  renderOutlookChips();
+  status.textContent = "";
+  if (route.page === "forecast") renderForecast();
+  if (route.page === "haze") renderOutlookChips();
 }
 
 function renderForecast() {
@@ -826,8 +831,7 @@ function initFcMap() {
 function setFcBasemap() {
   if (!fcMap) return;
   if (fcBase) fcMap.removeLayer(fcBase);
-  const style = isDark() ? "World_Dark_Gray_Base" : "World_Light_Gray_Base";
-  fcBase = L.tileLayer(`https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/${style}/MapServer/tile/{z}/{y}/{x}`, {
+  fcBase = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", {
     attribution: "Basemap &copy; Esri, HERE, Garmin, &copy; OpenStreetMap contributors", maxZoom: 16,
   }).addTo(fcMap);
 }
@@ -937,14 +941,103 @@ function whereEvents() {
 }
 
 /* ---------- boot ---------- */
-function renderAll() {
-  renderTiles();
-  renderTS();
-  renderCal();
-  renderHist();
-  renderHaze();
-  renderCalib();
-  if (state.fc.data) renderForecast();
+const pages = {
+  home: "Overview",
+  explore: "Fire Explorer",
+  forecast: "Fire Forecast",
+  haze: "Haze Preparedness",
+  data: "Data & Methods",
+};
+const sections = {
+  explore: ["calendar", "hotspots", "history"],
+  data: ["sources", "methods", "calibration"],
+};
+let route = { page: "home" };
+let ready = false;
+let terrainLoading = false;
+
+function activeSection(page, section) {
+  return route.page === page && route.section === section;
+}
+
+function updateRoute(moveFocus = false) {
+  const [path, query] = location.hash.slice(1).split("?");
+  const name = path.startsWith("/") ? path.slice(1) : "";
+  const page = Object.hasOwn(pages, name) ? name : "home";
+  const options = sections[page] || [];
+  const requested = new URLSearchParams(query).get("section");
+  const section = options.includes(requested) ? requested : options[0];
+  const changedPage = route.page !== page;
+  const changedSection = route.section !== section;
+  route = { page, section };
+  document.title = page === "home" ? "Fire Calendar · Malaysia & Indonesia" : pages[page] + " · Fire Calendar";
+  document.body.classList.toggle("map-page", page === "home");
+
+  document.querySelectorAll("[data-page]").forEach((view) => { view.hidden = view.dataset.page !== page; });
+  const view = document.querySelector('[data-page="' + page + '"]');
+  view.querySelectorAll("[data-section]").forEach((panel) => { panel.hidden = panel.dataset.section !== section; });
+  document.querySelectorAll("[data-nav]").forEach((link) => {
+    if (link.dataset.nav === page) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  });
+  view.querySelectorAll(".section-nav a").forEach((link) => {
+    if (new URLSearchParams(link.hash.split("?")[1]).get("section") === section) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  });
+
+  const filters = $("#filters");
+  const slot = view.querySelector("[data-filters]");
+  filters.hidden = !slot;
+  if (slot && filters.parentElement !== slot) slot.append(filters);
+  const observed = page === "home" || (page === "explore" && section !== "history");
+  const forecast = page === "forecast" || page === "haze";
+  filters.querySelectorAll("[data-observed-filter]").forEach((label) => { label.hidden = !observed; });
+  filters.querySelectorAll("[data-forecast-filter]").forEach((label) => { label.hidden = !forecast; });
+  $("#status").hidden = page === "data" && section !== "calibration";
+  hideTip();
+
+  if (moveFocus && (changedPage || (changedSection && !document.activeElement.closest(".section-nav")))) {
+    window.scrollTo(0, 0);
+    view.querySelector("h1").focus({ preventScroll: true });
+  }
+  if (ready && (changedPage || changedSection)) renderView();
+}
+
+function renderView() {
+  switch (route.page) {
+    case "home":
+      if (!terrainLoading) {
+        terrainLoading = true;
+        import("./hero3d.js").catch(() => { $("#hero-when").textContent = "3D view could not load"; });
+      }
+      break;
+    case "explore":
+      if (route.section === "calendar") {
+        renderTiles();
+        renderCal();
+        renderTS();
+      } else if (route.section === "history") {
+        renderHist();
+      } else {
+        if (!map) initMap();
+        map.invalidateSize({ pan: false });
+        fitMap();
+        loadMap();
+      }
+      break;
+    case "forecast":
+      if (!fcMap) initFcMap();
+      fcMap.invalidateSize({ pan: false });
+      loadForecast();
+      break;
+    case "haze":
+      renderHaze();
+      loadForecast();
+      break;
+    case "data":
+      if (route.section === "calibration") renderCalib();
+      break;
+  }
 }
 
 async function boot() {
@@ -966,19 +1059,20 @@ async function boot() {
   buildFilters();
   buildForecastControls();
   syncFilters();
-  renderAll();
-  initMap();
-  initFcMap();
+  $("#filters").querySelectorAll("select").forEach((select) => { select.disabled = false; });
   whereEvents();
-  loadMap();
-  loadForecast();
 
   const cal = $("#cal");
   cal.addEventListener("mousemove", calTip);
   cal.addEventListener("mouseleave", hideTip);
   cal.addEventListener("click", (e) => {
     const b = e.target.closest(".cell");
-    if (b) { const d = state.series[+b.dataset.i]; setYM(d.year, d.month); }
+    if (b) {
+      const index = b.dataset.i;
+      const d = state.series[+index];
+      setYM(d.year, d.month);
+      cal.querySelector(`[data-i="${index}"]`).focus({ preventScroll: true });
+    }
   });
   cal.addEventListener("focusin", (e) => {
     const b = e.target.closest(".cell");
@@ -986,13 +1080,14 @@ async function boot() {
   });
   cal.addEventListener("focusout", hideTip);
 
-  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-    renderAll();
-    setBasemap();
-    setFcBasemap();
-    renderWhere();
-    loadMap();
-  });
+  ready = true;
+  renderView();
 }
 
+$(".skip").addEventListener("click", (event) => {
+  event.preventDefault();
+  $("#main").focus();
+});
+window.addEventListener("hashchange", () => updateRoute(true));
+updateRoute();
 boot();
