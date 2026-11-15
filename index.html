@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UPWIND Space Apps Deck</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* Layout idea: a live 3D terrain fills the screen; the 7 slides are HUD panels laid over it, the camera flies per slide. */
+  --bg:#03080d;
+  --panel:rgba(6,20,30,.74);
+  --line:#38d6ff;
+  --ink:#d9f4ff;
+  --muted:#7fa4b5;
+  --fire:#ffb03a;
+  --hot:#ff5a2e;
+  --display:"Rajdhani","Arial Narrow",sans-serif;
+  --body:"IBM Plex Sans",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--ink);font-family:var(--body);overflow:hidden}
+#stage{position:fixed;inset:0;background:radial-gradient(ellipse at 50% 40%,#0a1e2b 0%,#03080d 70%)}
+#stage canvas{display:block}
+#labels{position:fixed;inset:0;pointer-events:none}
+.vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% 50%,transparent 55%,rgba(2,6,10,.75) 100%)}
+.scan{position:fixed;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(56,214,255,.025) 0 1px,transparent 1px 3px);mix-blend-mode:screen}
+
+/* ---------- top bar ---------- */
+.top{position:fixed;left:16px;right:16px;top:12px;display:flex;align-items:stretch;gap:14px;pointer-events:none;z-index:5}
+.brand{display:flex;align-items:center;gap:10px;padding:6px 18px 6px 12px;border:1px solid rgba(56,214,255,.35);background:var(--panel);clip-path:polygon(0 0,100% 0,calc(100% - 14px) 100%,0 100%)}
+.brand b{font-family:var(--display);font-weight:700;font-size:28px;letter-spacing:.32em;color:#fff;text-shadow:0 0 18px rgba(56,214,255,.6)}
+.brand i{width:26px;height:4px;background:repeating-linear-gradient(90deg,var(--line) 0 3px,transparent 3px 5px);display:block}
+.readouts{display:flex;gap:26px;align-items:center;flex:1;padding:4px 10px;border-bottom:1px solid rgba(56,214,255,.25);overflow:hidden}
+.ro small{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--muted)}
+.ro span{font-family:var(--display);font-weight:600;font-size:17px;letter-spacing:.06em;white-space:nowrap;font-variant-numeric:tabular-nums}
+.counter{font-family:var(--display);font-weight:700;font-size:30px;letter-spacing:.08em;padding:4px 14px;border:1px solid rgba(56,214,255,.35);background:var(--panel);font-variant-numeric:tabular-nums}
+.counter em{font-style:normal;color:var(--muted);font-size:20px}
+
+.tabs{position:fixed;left:16px;right:16px;top:70px;display:flex;gap:6px;z-index:5;flex-wrap:wrap}
+.tabs button{font-family:var(--mono);font-size:11px;letter-spacing:.12em;color:var(--muted);background:rgba(6,20,30,.55);border:1px solid rgba(56,214,255,.22);padding:5px 12px;cursor:pointer;text-transform:uppercase}
+.tabs button:hover{color:var(--ink);border-color:var(--line)}
+.tabs button[aria-current="true"]{color:#03141c;background:var(--line);border-color:var(--line);font-weight:600}
+button:focus-visible,input:focus-visible{outline:2px solid #fff;outline-offset:2px}
+
+/* ---------- slides ---------- */
+.slide{position:fixed;inset:110px 16px 56px 16px;pointer-events:none;opacity:0;visibility:hidden;transition:opacity .6s ease,visibility 0s linear .6s;z-index:4}
+.slide.on{opacity:1;visibility:visible;transition:opacity .6s ease .35s}
+.panel{position:absolute;pointer-events:auto;background:var(--panel);border:1px solid rgba(56,214,255,.28);padding:16px 18px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);max-height:100%;overflow:auto}
+.panel::before,.panel::after{content:"";position:absolute;width:14px;height:14px;border-color:var(--line);border-style:solid}
+.panel::before{left:-1px;top:-1px;border-width:2px 0 0 2px}
+.panel::after{right:-1px;bottom:-1px;border-width:0 2px 2px 0}
+.L{left:0;top:0;width:min(400px,34vw)}
+.R{right:0;top:0;width:min(380px,32vw)}
+.ph{display:flex;align-items:center;justify-content:space-between;gap:8px;font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--line);text-transform:uppercase;border-bottom:1px solid rgba(56,214,255,.25);padding-bottom:7px;margin-bottom:12px}
+.ph::after{content:"";width:34px;height:4px;background:repeating-linear-gradient(90deg,var(--line) 0 4px,transparent 4px 7px)}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(40px,4.6vw,72px);line-height:.95;letter-spacing:.1em;color:#fff;text-shadow:0 0 30px rgba(56,214,255,.45)}
+h2{font-family:var(--display);font-weight:700;font-size:clamp(28px,3vw,40px);line-height:1;letter-spacing:.04em;color:#fff;text-wrap:balance;margin-bottom:10px}
+p{font-size:14px;line-height:1.5;color:#c3dde9;max-width:62ch}
+p+p{margin-top:8px}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:var(--fire);text-transform:uppercase;margin-bottom:10px;line-height:1.5}
+.sub{font-size:17px;line-height:1.4;color:#e6f7ff;margin:12px 0 16px;max-width:30ch}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13px}
+.kv dt{font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;padding-top:2px}
+.kv dd{color:var(--ink)}
+.members{display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;font-size:13px;margin-top:6px}
+.members li{list-style:none;display:flex;gap:7px;align-items:baseline}
+.members li::before{content:"";width:6px;height:6px;background:var(--line);box-shadow:0 0 8px var(--line);flex:none;transform:translateY(-1px)}
+.big{font-family:var(--display);font-weight:700;font-size:clamp(26px,2.5vw,38px);line-height:1;color:#fff;font-variant-numeric:tabular-nums}
+.big.fire{color:var(--fire);text-shadow:0 0 22px rgba(255,140,40,.45)}
+.big.cy{color:var(--line);text-shadow:0 0 22px rgba(56,214,255,.4)}
+.cap{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;margin-top:4px;line-height:1.45}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:6px 0 12px}
+.facts{display:grid;gap:10px;margin-top:12px}
+.fact{border-left:2px solid var(--fire);padding:2px 0 2px 10px;font-size:13px;line-height:1.45;color:#d6ecf5}
+.src{display:block;font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.06em;margin-top:2px}
+.note{font-family:var(--mono);font-size:10.5px;line-height:1.5;color:var(--muted);margin-top:10px}
+.sensors{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
+.sensor{border:1px solid rgba(56,214,255,.25);padding:10px;background:rgba(56,214,255,.04)}
+.sensor h3{font-family:var(--display);font-size:22px;letter-spacing:.06em;color:#fff}
+.sensor.m h3{color:var(--fire)}
+.sensor ul{list-style:none;font-size:12.5px;line-height:1.55;color:#c3dde9;margin-top:4px}
+.steps{list-style:none;display:grid;gap:9px;counter-reset:s}
+.steps li{display:grid;grid-template-columns:38px 1fr;gap:10px;align-items:start;font-size:13px;line-height:1.45;color:#cfe7f1}
+.steps li b{display:block;font-family:var(--display);font-size:17px;letter-spacing:.08em;color:#fff}
+.steps li::before{counter-increment:s;content:"0" counter(s);font-family:var(--mono);font-size:12px;color:#03141c;background:var(--line);text-align:center;padding:4px 0;box-shadow:0 0 12px rgba(56,214,255,.5)}
+.pending{border:1px dashed rgba(255,176,58,.6);padding:12px;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center;margin:8px 0}
+.pending .big{font-size:34px;color:var(--fire)}
+.vt{width:100%;border-collapse:collapse;font-size:12.5px;font-variant-numeric:tabular-nums}.vt th{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);text-align:left;font-weight:500;padding:4px 6px;border-bottom:1px solid rgba(56,214,255,.3)}.vt td{padding:6px;border-bottom:1px solid rgba(56,214,255,.12);color:var(--ink)}.vt td:nth-child(3),.vt td:nth-child(4),.vt th:nth-child(3),.vt th:nth-child(4){text-align:right}.vt td:nth-child(4){color:var(--fire);font-weight:600}.tag{display:inline-block;font-family:var(--mono);font-size:10px;letter-spacing:.12em;padding:2px 7px;border:1px solid var(--fire);color:var(--fire);text-transform:uppercase}
+.cards{display:grid;gap:10px}
+.card{border:1px solid rgba(56,214,255,.22);background:rgba(56,214,255,.05);padding:11px 12px}
+.card h3{font-family:var(--display);font-size:20px;letter-spacing:.04em;color:#fff;margin-bottom:3px}
+.card p{font-size:13px}
+.q{font-family:var(--display);font-weight:600;font-size:26px;line-height:1.15;color:#fff;border-left:3px solid var(--line);padding-left:12px;margin:6px 0 14px;text-wrap:balance}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}.cols>*,.stats>*{min-width:0}.panel{overflow-x:hidden}
+.list{list-style:none;display:grid;gap:5px;font-size:12.5px;line-height:1.45;color:#cfe7f1}
+.list li{padding-left:12px;position:relative}
+.list li::before{content:"";position:absolute;left:0;top:7px;width:5px;height:5px;background:var(--line)}
+.list.f li::before{background:var(--fire)}
+h4{font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--line);text-transform:uppercase;margin:10px 0 6px}
+.wide{left:0;right:0;top:auto;bottom:0;width:auto;max-height:62%}.c3{grid-template-columns:1.2fr 1fr 1fr}
+
+/* explore controls */
+.ctl{display:grid;gap:8px;margin:8px 0 12px}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg button{flex:1;min-width:120px;font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;padding:8px 10px;cursor:pointer;color:var(--ink);background:rgba(56,214,255,.06);border:1px solid rgba(56,214,255,.35);text-align:left;line-height:1.35}
+.seg button small{display:block;color:var(--muted);font-size:10px;letter-spacing:.08em}
+.seg button[aria-pressed="true"]{background:var(--line);color:#03141c;border-color:var(--line)}
+.seg button[aria-pressed="true"] small{color:#06303f}
+.yr{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:12px}
+.yr input{flex:1;accent-color:var(--fire)}
+.yr output{font-family:var(--display);font-size:26px;font-weight:700;color:var(--fire);min-width:58px;text-align:right}
+.hint{font-family:var(--mono);font-size:10.5px;color:var(--muted);letter-spacing:.08em}
+svg text{font-family:var(--mono)}
+.cal rect.c{cursor:pointer}
+.cal rect.c:hover{stroke:#fff;stroke-width:1}
+.legend{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:6px}
+.legend i{display:block;width:110px;height:8px;background:linear-gradient(90deg,#0c2230,#5a3a12,#c46a14,#ff9a2e,#ffd36b)}
+
+/* bottom bar */
+.bottom{position:fixed;left:16px;right:16px;bottom:10px;display:flex;align-items:center;gap:24px;font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--muted);border-top:1px solid rgba(56,214,255,.22);padding-top:8px;z-index:5;flex-wrap:wrap}
+.bottom b{color:var(--ink);font-weight:500}
+.bottom .sp{flex:1}
+.bottom .si{color:var(--fire);border:1px solid rgba(255,176,58,.5);padding:2px 7px}
+.nav{display:flex;gap:6px}
+.nav button{font-family:var(--mono);font-size:13px;color:var(--ink);background:var(--panel);border:1px solid rgba(56,214,255,.35);width:34px;height:26px;cursor:pointer}
+.nav button:hover{border-color:var(--line);color:#fff}
+
+/* 3D labels */
+.lbl{font-family:var(--display);font-weight:700;letter-spacing:.22em;font-size:15px;color:#fff;text-shadow:0 0 6px #000,0 0 14px rgba(0,0,0,.8);white-space:nowrap;transition:opacity .5s}
+.lbl.fire{color:#ffd08a}
+.lbl.cy{color:#a6ecff}
+.lbl small{display:block;font-family:var(--mono);font-weight:500;font-size:9.5px;letter-spacing:.16em;opacity:.85;margin-top:1px;text-align:center}
+.lbl{text-align:center}
+.lbl.sm{font-size:12px;letter-spacing:.16em;color:#cfe3ea;font-weight:600}
+.pin{display:flex;flex-direction:column;align-items:center;gap:3px;transform:translateY(-14px)}
+.pin i{width:10px;height:10px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px rgba(56,214,255,.5),0 0 14px var(--line)}
+.pin span{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;color:#fff;background:rgba(3,12,18,.75);padding:2px 6px;border:1px solid rgba(56,214,255,.4)}
+.wind{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;color:#e8eef0;background:rgba(3,12,18,.6);padding:2px 6px;border:1px solid rgba(220,230,235,.35)}
+
+#loading{position:fixed;inset:0;display:grid;place-items:center;z-index:20;background:var(--bg);font-family:var(--mono);letter-spacing:.2em;color:var(--line);font-size:12px;transition:opacity .8s}
+#loading.done{opacity:0;pointer-events:none}
+
+@media (max-width:900px){
+  .readouts{display:none}
+  .lbl small{display:none}
+  .slide{inset:112px 10px 58px 10px}
+  .L,.R{width:auto;left:0;right:0;padding:10px 12px}
+  .L{top:0;max-height:36%}
+  .R{top:auto;bottom:0;max-height:34%}
+  .wide{max-height:52%}
+  .cols,.c3{grid-template-columns:1fr}
+  h2{font-size:24px;margin-bottom:6px} p,.fact,.steps li,.card p{font-size:12.5px} .sub{font-size:14px;margin:6px 0 8px}
+  .q{font-size:19px}
+  .bottom>span:not(.si){display:none}.bottom .sp{display:block;flex:1}
+}
+@media (prefers-reduced-motion:reduce){.slide,.slide.on{transition:none}}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="labels"></div>
+<div class="vignette"></div>
+<div class="scan"></div>
+<div id="loading">LOADING NASA IMAGERY · TERRAIN · FIRMS HOTSPOTS</div>
+
+<header class="top">
+  <div class="brand"><i></i><b>UPWIND</b></div>
+  <div class="readouts">
+    <div class="ro"><small>AREA OF INTEREST</small><span>SUMATRA + KALIMANTAN → MALAYSIA</span></div>
+    <div class="ro"><small>VIEW CENTRE</small><span id="ro-center">1.50°N 106.50°E</span></div>
+    <div class="ro"><small>SENSORS</small><span>MODIS C6.1 · VIIRS 375 M</span></div>
+    <div class="ro"><small>RECORD</small><span>2000 – 2025</span></div>
+  </div>
+  <div class="counter" aria-live="polite"><span id="cnum">01</span> <em>/ 07</em></div>
+</header>
+
+<nav class="tabs" aria-label="Slides">
+  <button data-go="0">01 Mission</button><button data-go="1">02 Problem</button><button data-go="2">03 Sensors</button><button data-go="3">04 Method</button><button data-go="4">05 Explore</button><button data-go="5">06 Impact</button><button data-go="6">07 Sources</button>
+</nav>
+
+<!-- 01 -->
+<section class="slide" data-title="Mission">
+  <div class="panel L">
+    <div class="eyebrow">NASA Space Apps Challenge 2026<br>Harmonization of MODIS and VIIRS Hot Spots</div>
+    <h1>UPWIND</h1>
+    <div class="sub">A harmonized burning-activity calendar for the fires behind Malaysia's haze.</div>
+    <div class="ph">Team · Houston—we have a problem</div>
+    <ul class="members">
+      <li>Chong Kai Li</li><li>Neoh Xin Yi</li><li>Celine Hew Boon Ling</li><li>Sim Shi Zhen</li><li>Loh Jinsen</li><li>Ler Rou Yi</li>
+    </ul>
+    <dl class="kv" style="margin-top:14px">
+      <dt>Local event</dt><dd>Johor Bahru, Malaysia</dd>
+      <dt>Challenge</dt><dd>Harmonization of MODIS and VIIRS Hot Spots</dd>
+    </dl>
+  </div>
+  <div class="panel R">
+    <div class="ph">Area of interest</div>
+    <dl class="kv">
+      <dt style="color:var(--fire)">Upwind</dt><dd>Sumatra and Kalimantan (Indonesia), where most of the region's burning is detected</dd>
+      <dt style="color:var(--line)">Downwind</dt><dd>Peninsular Malaysia, Sarawak and Sabah</dd>
+    </dl>
+    <div class="stats" style="margin-top:14px">
+      <div><div class="big fire" id="s1-modis">–</div><div class="cap">MODIS hotspots<br>Sumatra + Kalimantan, 2000–2025</div></div>
+      <div><div class="big cy" id="s1-viirs">–</div><div class="cap">VIIRS hotspots<br>Sumatra + Kalimantan, 2012–2025</div></div>
+    </div>
+    <p class="note">Columns stand only on Sumatra and Kalimantan: the most active 0.2° cells (top 40%), MODIS hotspots summed over 2000–2025, from NASA FIRMS. Malaysia carries no columns. It is where the smoke lands.</p>
+  </div>
+</section>
+
+<!-- 02 -->
+<section class="slide" data-title="Problem">
+  <div class="panel L">
+    <div class="ph">02 · The problem</div>
+    <h2>The haze is made upwind</h2>
+    <p>In dry seasons, fires on peat and farmland in Sumatra and Kalimantan send smoke across the Strait of Malacca and into Malaysian Borneo. Malaysia breathes the smoke but cannot see the fires from the ground.</p>
+    <div class="facts">
+      <div class="fact">Smoke from Sumatra's hotspots is carried by prevailing winds into Peninsular Malaysia, and from Kalimantan into Sarawak and Sabah.<span class="src">ASMC analysis, via Malaysiakini (2019)</span></div>
+      <div class="fact">In 2019, haze closed schools in nine districts of Sarawak.<span class="src">Malaysiakini (2019)</span></div>
+      <div class="fact">On 26 August 2026, ASMC activated Alert Level 3, its highest transboundary haze alert, for southern ASEAN.<span class="src">Bernama, 27 Aug 2026</span></div>
+    </div>
+  </div>
+  <div class="panel R">
+    <div class="ph">2015 haze year · MODIS</div>
+    <div class="stats">
+      <div><div class="big fire" id="s2-up">–</div><div class="cap">Hotspots in<br>Sumatra + Kalimantan</div></div>
+      <div><div class="big cy" id="s2-my">–</div><div class="cap">Hotspots in<br>all of Malaysia</div></div>
+    </div>
+    <p><b style="color:#fff" id="s2-x">–</b> as many hotspots were detected upwind as inside Malaysia in 2015.</p>
+    <p class="note">MODIS C6.1, vegetation fires (type 0), confidence ≥ 30. Smoke on the map leaves the Indonesian hotspot cells and drifts to Malaysia along the June to September southwest monsoon. It is drawn schematically, not modelled.</p>
+  </div>
+</section>
+
+<!-- 03 -->
+<section class="slide" data-title="Sensors">
+  <div class="panel L">
+    <div class="ph">03 · Why the records disagree</div>
+    <h2>Two satellites, two different counts</h2>
+    <div class="sensors">
+      <div class="sensor m"><h3>MODIS</h3><ul><li>Terra and Aqua</li><li>1 km pixels</li><li>Record from Nov 2000</li><li>Satellites nearing end of life</li></ul></div>
+      <div class="sensor"><h3>VIIRS</h3><ul><li>Suomi NPP</li><li>375 m pixels</li><li>Record from Jan 2012</li><li>Sees more small fires</li></ul></div>
+    </div>
+    <p>Over the same land from 2012 to 2025, VIIRS logged <b style="color:#fff" id="s3-ratio">–</b> as many hotspots as MODIS.</p>
+    <p>Splice the two records naively and 2012 jumps <b style="color:#fff" id="s3-jump">–</b> over 2011. The fires did not change that year. The satellite did.</p>
+  </div>
+  <div class="panel R">
+    <div class="ph">Annual hotspots · Sumatra + Kalimantan</div>
+    <svg id="chart" viewBox="0 0 360 230" width="100%" role="img" aria-label="Annual hotspot counts from MODIS and VIIRS, and a naive splice"></svg>
+    <div class="legend" style="gap:14px;flex-wrap:wrap">
+      <span style="color:var(--fire)">━ MODIS</span><span style="color:var(--line)">━ VIIRS</span><span style="color:var(--hot)">┅ Naive splice</span>
+    </div>
+    <p class="note">Map: <b id="s3-sensor" style="color:#fff">MODIS</b> hotspots over Sumatra in 2019, same place, same fires. The view switches sensor every few seconds.</p>
+  </div>
+</section>
+
+<!-- 04 -->
+<section class="slide" data-title="Method">
+  <div class="panel L">
+    <div class="ph">04 · Method</div>
+    <h2>From two records to one calendar</h2>
+    <ol class="steps">
+      <li><div><b>Ingest</b>NASA FIRMS standard-processing archives: MODIS C6.1 (2000–2025) and VIIRS S-NPP 375 m (2012–2025). The harmonized record starts in 2003, the first full year of Aqua.</div></li>
+      <li><div><b>Clean</b>Keep vegetation fires (type 0). Drop duplicates, MODIS confidence below 30 and VIIRS low confidence. Use local-time dates.</div></li>
+      <li><div><b>Grid</b>Count fire cell-days on a 0.05° grid: a cell that burns on a given day counts once, however many pixels detect it.</div></li>
+      <li><div><b>Calibrate</b>For each of five regions, fit a linear and a power-law model from MODIS to the VIIRS scale on the overlap months, Feb 2012 to 2025.</div></li>
+      <li><div><b>Validate</b>Leave one year out, refit, predict that year. Keep the model with the lower error.</div></li>
+    </ol>
+  </div>
+  <div class="panel R">
+    <div class="ph">Leave-one-year-out validation</div>
+    <table class="vt">
+      <thead><tr><th>Region</th><th>Model</th><th>R²</th><th>Error</th></tr></thead>
+      <tbody>
+        <tr><td>Kalimantan</td><td>Power law</td><td>0.989</td><td>10.5%</td></tr>
+        <tr><td>Sumatra</td><td>Power law</td><td>0.982</td><td>11.7%</td></tr>
+        <tr><td>Sabah</td><td>Power law</td><td>0.897</td><td>18.4%</td></tr>
+        <tr><td>Peninsular Malaysia</td><td>Linear</td><td>0.957</td><td>18.5%</td></tr>
+        <tr><td>Sarawak</td><td>Linear</td><td>0.924</td><td>21.0%</td></tr>
+      </tbody>
+    </table>
+    <p class="note">Error is the median absolute error of calibrated MODIS against observed VIIRS, monthly, on the left-out year (167 overlap months per region).</p>
+    <div class="fact" style="margin-top:10px">One fixed factor is not enough. In Kalimantan a single linear factor gives 29.4% error; the power law gives 10.5%.</div>
+    <p class="note">The same left-out errors were used to choose each model, so they are slightly optimistic. The grid on the map is drawn at 0.1° for legibility; counts use 0.05° cells.</p>
+  </div>
+</section>
+
+<!-- 05 -->
+<section class="slide" data-title="Explore">
+  <div class="panel L">
+    <div class="ph">05 · Explore</div>
+    <h2>Where do you live?</h2>
+    <div class="ctl">
+      <div class="seg" role="group" aria-label="Region">
+        <button id="b-pen" aria-pressed="true">Peninsular Malaysia<small>Upwind: Sumatra</small></button>
+        <button id="b-east" aria-pressed="false">Sarawak &amp; Sabah<small>Upwind: Kalimantan</small></button>
+      </div>
+      <div class="seg" role="group" aria-label="Sensor">
+        <button id="b-modis" aria-pressed="true">MODIS<small>2000–2025</small></button>
+        <button id="b-viirs" aria-pressed="false">VIIRS<small>2012–2025</small></button>
+      </div>
+      <label class="yr" for="year"><span>YEAR</span><input id="year" type="range" min="2001" max="2025" value="2015"><output id="yout">2015</output></label>
+    </div>
+    <p class="note" style="margin:0 0 8px">The map shows that year's hotspots on the Indonesian side. Smoke thickness follows the year's hotspot count; its path is schematic.</p><p class="hint">Drag to rotate · scroll to zoom · click a calendar row to load that year</p>
+  </div>
+  <div class="panel R">
+    <div class="ph"><span id="cal-title">Burning calendar · Sumatra · MODIS</span></div>
+    <svg id="cal" class="cal" viewBox="0 0 340 300" width="100%" role="img" aria-label="Monthly hotspot calendar"></svg>
+    <div class="legend"><span>fewer</span><i></i><span>more hotspots</span></div>
+    <p class="note">Raw monthly hotspot counts shown in this preview. The web app shows harmonized fire cell-days on the VIIRS scale and compares each month with the 2003–2025 median of the same calendar month.</p>
+  </div>
+</section>
+
+<!-- 06 -->
+<section class="slide" data-title="Impact">
+  <div class="panel L">
+    <div class="ph">06 · Impact</div>
+    <h2>Who it helps</h2>
+    <div class="q">Is this season's burning unusual? A consistent 23-year baseline can answer that.</div>
+    <p>ASMC's monthly haze reviews compare hotspot counts with the previous five years, from one VIIRS satellite. Our harmonized record reaches back to 2003.</p>
+    <span class="src">ASMC Review of Regional Haze Situation, August 2025</span>
+    <p style="margin-top:12px">The web app also gives a 2026–2027 outlook from the recent seasonal pattern and the El Niño index. Backtested on 2013–2025, its typical monthly error is ±38%.</p>
+  </div>
+  <div class="panel R">
+    <div class="ph">Users</div>
+    <div class="cards">
+      <div class="card"><h3>Environment and disaster agencies</h3><p>See early when upwind burning runs above its historical range, and plan the response.</p></div>
+      <div class="card"><h3>Health and education</h3><p>Prepare masks, clinic capacity and school plans for the months that historically burn most.</p></div>
+      <div class="card"><h3>Researchers and land managers</h3><p>One consistent series across the MODIS-to-VIIRS handover, for peatland and trend studies.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 07 -->
+<section class="slide" data-title="Sources">
+  <div class="panel L wide">
+    <div class="ph">07 · Data, limits and next steps</div>
+    <div class="cols c3">
+      <div>
+        <h4>NASA and partner data</h4>
+        <ul class="list">
+          <li>NASA FIRMS: MODIS Collection 6.1 active fire, VIIRS S-NPP 375 m active fire (standard processing), country yearly archives</li>
+          <li>NASA GIBS: Blue Marble Next Generation; Blue Marble Shaded Relief and Bathymetry</li>
+          <li>Terrain: AWS Terrain Tiles (Mapzen Terrarium, SRTM-derived). River lines are flow paths computed from this terrain, not surveyed rivers</li>
+          <li>NOAA CPC Oceanic Niño Index, for the outlook</li>
+          <li>Boundaries: Natural Earth</li>
+          <li>Context: ASMC, Bernama, Malaysiakini</li>
+        </ul>
+        <h4>Tools</h4>
+        <ul class="list"><li>three.js and GSAP (bundled in assets/vendor.js, so the map runs offline), Google Fonts (Rajdhani, IBM Plex)</li></ul>
+      </div>
+      <div>
+        <h4>Limits</h4>
+        <ul class="list f">
+          <li>A hotspot is a hot pixel at overpass time, not one fire</li>
+          <li>Cloud and forest canopy hide some fires</li>
+          <li>Not a haze forecast: wind and rain are not modelled</li>
+          <li>Values before Feb 2012 are calibrated MODIS estimates, with 10% to 21% typical error</li>
+          <li>Outlook backtests use the observed El Niño index, which is not known in advance, so real forecast errors would be larger</li>
+          <li>Region boxes are approximate</li>
+        </ul>
+        <h4>Next steps</h4>
+        <ul class="list">
+          <li>Add 2026 near-real-time data from the FIRMS API</li>
+          <li>Add NOAA-20 and NOAA-21 VIIRS</li>
+          <li>Overlay wind and Malaysian air-quality records</li>
+        </ul>
+      </div>
+      <div>
+        <h4>Use of SI</h4>
+        <p style="font-size:12.5px">This deck's code and layout were built with help from Claude (Anthropic). The map is real NASA imagery and terrain rendered in 3D; hotspot counts are computed from NASA FIRMS files.</p>
+        <h4>Team</h4>
+        <p style="font-size:12.5px">Houston—we have a problem · Johor Bahru, Malaysia</p>
+        <p style="font-size:12.5px">Chong Kai Li, Neoh Xin Yi, Celine Hew Boon Ling, Sim Shi Zhen, Loh Jinsen, Ler Rou Yi</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="bottom">
+  <span>LAYER <b id="b-layer">MODIS 2000–2025</b></span>
+  <span>HOTSPOTS · <span id="b-where">SUMATRA + KALIMANTAN</span> <b id="b-count">–</b></span>
+  <span>DATA <b>NASA FIRMS · GIBS</b></span>
+  <span class="si">SI-ASSISTED VISUALIZATION</span>
+  <span class="sp"></span>
+  <span>← → TO NAVIGATE</span>
+  <div class="nav"><button id="prev" aria-label="Previous slide">‹</button><button id="next" aria-label="Next slide">›</button></div>
+</footer>
+
+<script src="assets/vendor.js"></script>
+<script src="assets/data.js"></script>
+<script src="assets/regions.js"></script>
+<script src="assets/prov_lines.js"></script>
+<script src="assets/tex.js"></script>
+<script>
+(()=>{
+const {THREE,OrbitControls,EffectComposer,RenderPass,UnrealBloomPass,OutputPass,Line2,LineMaterial,LineGeometry,CSS2DRenderer,CSS2DObject,gsap}=window.V;
+const D=window.FIRE_DATA, TEX=window.TEX, REDUCED=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const fmt=n=>n.toLocaleString('en-US');
+
+/* ---------- map geometry ----------
+   1 world unit = 1 degree. Land is a block that stands on a dark floor:
+   sea cells sit at BASE, land cells at their (exaggerated) height, so the coast becomes a cliff. */
+const BASE=-0.5;
+const HA=0.0022,HE=60,HP=0.75;                          // vertical exaggeration curve (lifts low hills, tames peaks)
+const hOf=e=>HA*(Math.pow(Math.max(e,0)+HE,HP)-Math.pow(HE,HP));
+const P=(lon,lat,y=0)=>new THREE.Vector3(lon-107,y,-(lat-0.5));
+const GW=2080,GH=1200,STEP=26/GW,CPX=Math.round(0.2/STEP); let ELEV,RID,GLOW;               // 0.025-degree grids: elevation (m), region id, coast glow
+const R_SUM=1,R_KAL=2,R_PEN=3,R_EAST=4,R_CTX=5;         // region ids in RID (5 = other land, shown as low context)
+
+/* ---------- renderer ---------- */
+const stage=document.getElementById('stage');
+const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.08;
+stage.appendChild(renderer.domElement);
+const labelR=new CSS2DRenderer(); document.getElementById('labels').appendChild(labelR.domElement);
+const FOGC=new THREE.Color(0x03080d), FOGD=0.02;
+const scene=new THREE.Scene(); scene.fog=new THREE.FogExp2(FOGC.getHex(),FOGD);
+const camera=new THREE.PerspectiveCamera(38,1,0.02,200);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true; controls.dampingFactor=0.08; controls.maxPolarAngle=1.42; controls.minDistance=2.2; controls.maxDistance=34;
+const composer=new EffectComposer(renderer,new THREE.WebGLRenderTarget(4,4,{type:THREE.HalfFloatType,samples:4})); composer.setPixelRatio(renderer.getPixelRatio());
+composer.addPass(new RenderPass(scene,camera));
+const bloom=new UnrealBloomPass(new THREE.Vector2(1,1),0.4,0.5,0.92); composer.addPass(bloom);
+composer.addPass(new OutputPass());
+const lineMats=[]; const U={time:{value:0},px:{value:1}};
+function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h);composer.setSize(w,h);labelR.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();lineMats.forEach(m=>m.resolution.set(w,h));
+  U.px.value=renderer.getDrawingBufferSize(new THREE.Vector2()).y/(2*Math.tan(camera.fov*Math.PI/360));}
+addEventListener('resize',resize);
+
+/* ---------- helpers ---------- */
+function elevAt(lon,lat){
+  let x=(lon-94)/26*GW-0.5, y=(8-lat)/15*GH-0.5;
+  x=Math.max(0,Math.min(GW-1.001,x)); y=Math.max(0,Math.min(GH-1.001,y));
+  const x0=x|0,y0=y|0,fx=x-x0,fy=y-y0,i=y0*GW+x0;
+  return ELEV[i]*(1-fx)*(1-fy)+ELEV[i+1]*fx*(1-fy)+ELEV[i+GW]*(1-fx)*fy+ELEV[i+GW+1]*fx*fy;
+}
+const yAt=(lon,lat)=>hOf(elevAt(lon,lat));              // top-surface height (sea level = 0)
+function drape(coords,lift=0.014,step=0.02){
+  const out=[];
+  for(let k=0;k<coords.length-1;k++){
+    const [a,b]=coords[k],[c,d]=coords[k+1]; const n=Math.max(1,Math.ceil(Math.hypot(c-a,d-b)/step));
+    for(let s=0;s<n;s++){const lo=a+(c-a)*s/n,la=b+(d-b)*s/n;out.push([lo,la]);}
+  }
+  out.push(coords[coords.length-1]);
+  return out.map(([lo,la])=>P(lo,la,yAt(lo,la)+lift));
+}
+function fatLine(pts,color,width,opacity=1,extra={}){
+  const g=new LineGeometry(); g.setPositions(pts.flatMap(v=>[v.x,v.y,v.z]));
+  const m=new LineMaterial({color,linewidth:width,transparent:true,opacity,depthWrite:false,toneMapped:false,...extra});
+  m.resolution.set(innerWidth,innerHeight); lineMats.push(m);
+  const l=new Line2(g,m); l.computeLineDistances(); return l;
+}
+function loadImage(src){return new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=()=>rej(new Error('image failed'));i.src=src;});}
+async function pixels(src){const img=await loadImage(src);const cv=document.createElement('canvas');cv.width=GW;cv.height=GH;const cx=cv.getContext('2d',{willReadFrequently:true});cx.drawImage(img,0,0);return cx.getImageData(0,0,GW,GH).data;}
+async function texture(src,srgb){const t=await new THREE.TextureLoader().loadAsync(src);t.flipY=false;t.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoColorSpace;t.anisotropy=renderer.capabilities.getMaxAnisotropy();t.needsUpdate=true;return t;}
+
+/* ---------- shaders ---------- */
+const FLOOR_GLSL=`
+float gridL(vec2 p,float s){vec2 q=p/s;vec2 g=abs(fract(q-0.5)-0.5)/fwidth(q);return 1.0-min(min(g.x,g.y),1.0);}
+vec3 floorCol(vec3 w,float glow){
+  vec3 c=vec3(0.004,0.013,0.021);
+  c+=vec3(0.016,0.085,0.12)*gridL(w.xz,1.0)*0.55;
+  c+=vec3(0.016,0.085,0.12)*gridL(w.xz,0.25)*0.16;
+  c+=vec3(0.012,0.12,0.19)*glow*glow;
+  return c;}
+vec3 fogged(vec3 c,float d){return mix(c,uFog,1.0-exp(-d*d*uFogD*uFogD));}`;
+const TERRAIN_VS=`
+attribute vec3 aK; attribute float aMy;
+varying vec3 vW; varying vec3 vK; varying float vMy; varying float vD;
+void main(){vW=position;vK=aK;vMy=aMy;vec4 mv=modelViewMatrix*vec4(position,1.0);vD=length(mv.xyz);gl_Position=projectionMatrix*mv;}`;
+const TERRAIN_FS=`
+uniform sampler2D tCol,tNrm,tLit; uniform vec3 uSun,uFog; uniform float uFogD,uBase,uHaze;
+varying vec3 vW; varying vec3 vK; varying float vMy; varying float vD;
+${FLOOR_GLSL}
+void main(){
+  vec2 uv=vec2((vW.x+13.0)/26.0,(vW.z+7.5)/15.0);
+  float t=clamp((vW.y-uBase)/(-uBase),0.0,1.0);            // 0 at the floor, 1 at sea level
+  vec3 edgeC=mix(vec3(1.25,0.62,0.16),vec3(0.22,0.95,1.35),vMy);   // upwind amber, downwind cyan
+  vec3 c;
+  if(vK.x>0.985){                                           // top of the study regions
+    vec4 nt=texture2D(tNrm,uv); vec2 n2=nt.rg*2.0-1.0;
+    vec3 N=normalize(vec3(n2.x,sqrt(max(1.0-dot(n2,n2),0.0)),n2.y));
+    vec3 alb=texture2D(tCol,uv).rgb;
+    alb=pow(alb,vec3(1.12))*vec3(0.80,1.06,0.78);
+    float lum=dot(alb,vec3(0.3,0.6,0.1));
+    alb=mix(alb,lum*vec3(0.62,0.95,1.12),0.30*vMy);        // Malaysia reads cooler: the receiving side
+    vec3 lt=texture2D(tLit,uv).rgb;                         // r: baked sun shadow, g: rivers, b: ambient occlusion
+    float diff=max(dot(N,uSun),0.0)*mix(0.10,1.0,lt.r);
+    vec3 amb=vec3(0.13,0.21,0.23)*(0.22+1.1*lt.b);
+    c=alb*(amb+vec3(1.0,0.93,0.80)*diff*3.1);
+    c+=vec3(0.010,0.035,0.045)*pow(max(1.0-N.y,0.0),2.0)*lt.b;        // cool sky fill on steep slopes
+    c*=0.85+0.4*smoothstep(0.0,0.9,vW.y);
+    float rv=smoothstep(0.22,0.7,lt.g);
+    c=mix(c,vec3(0.62,1.0,1.28)*(0.75+0.6*lt.g),rv*0.9);  // rivers catch the light
+    c=mix(c,vec3(0.33,0.31,0.28),uHaze*vMy*0.22);          // haze settling over Malaysia
+    c+=edgeC*vK.z*vK.z*0.09;                               // lit rim along the coast
+  }else if(vK.x>0.015){                                     // cliff of the study regions
+    float st=0.72+0.14*step(0.5,fract(vW.x*36.0))+0.14*step(0.5,fract(vW.z*36.0));
+    c=mix(vec3(0.003,0.012,0.022),vec3(0.02,0.20,0.32),pow(t,2.4))*st;
+    c+=edgeC*smoothstep(0.88,1.0,t)*0.5;
+  }else if(vK.y>0.985){                                     // neighbouring land, kept low and quiet
+    vec4 nt=texture2D(tNrm,uv); vec2 n2=nt.rg*2.0-1.0;
+    vec3 N=normalize(vec3(n2.x*0.5,1.0,n2.y*0.5));
+    c=vec3(0.016,0.045,0.062)*(0.55+1.4*max(dot(N,uSun),0.0));
+  }else if(vK.y>0.015){
+    float tc=clamp((vW.y-uBase)/0.05,0.0,1.0);
+    c=mix(vec3(0.004,0.014,0.022),vec3(0.02,0.10,0.14),tc*tc);
+  }else c=floorCol(vW,vK.z);
+  gl_FragColor=vec4(fogged(c,vD),1.0);
+}`;
+
+/* ---------- build ---------- */
+const G={};
+async function build(){
+  const [dp,mp,tCol,tNrm,tLit,tMeta]=await Promise.all([pixels(TEX.dem),pixels(TEX.meta),texture(TEX.color,true),texture(TEX.normal,false),texture(TEX.light,false),texture(TEX.meta,false)]);
+  ELEV=new Float32Array(GW*GH); RID=new Uint8Array(GW*GH); GLOW=new Float32Array(GW*GH);
+  for(let i=0;i<GW*GH;i++){ELEV[i]=dp[i*4]*256+dp[i*4+1]-32768;RID[i]=Math.round(mp[i*4]/40);GLOW[i]=mp[i*4+1]/255;}
+
+  // terrain block: land only, one vertex per 0.0125-degree cell; sea-side vertices drop to BASE so the coast becomes a cliff
+  const N=GW*GH, need=new Uint8Array(N); let nq=0;
+  const isL=i=>RID[i]>=1&&RID[i]<=5;
+  for(let j=0;j<GH-1;j++)for(let k=0;k<GW-1;k++){const a=j*GW+k;if(isL(a)||isL(a+1)||isL(a+GW)||isL(a+GW+1)){nq++;need[a]=need[a+1]=need[a+GW]=need[a+GW+1]=1;}}
+  let nv=0; const vid=new Int32Array(N); for(let i=0;i<N;i++)vid[i]=need[i]?nv++:-1;
+  const pos=new Float32Array(nv*3), aK=new Float32Array(nv*3), aMy=new Float32Array(nv);
+  for(let j=0,i=0;j<GH;j++)for(let k=0;k<GW;k++,i++){
+    const v=vid[i]; if(v<0)continue;
+    const r=RID[i], focus=r>=1&&r<=4, ctx=r===R_CTX;
+    pos[v*3]=94+(k+0.5)*STEP-107; pos[v*3+2]=-((8-(j+0.5)*STEP)-0.5);
+    pos[v*3+1]=focus?hOf(ELEV[i]):ctx?BASE+0.05+hOf(ELEV[i])*0.2:BASE;
+    aK[v*3]=focus?1:0; aK[v*3+1]=ctx?1:0; aK[v*3+2]=GLOW[i]; aMy[v]=(r===R_PEN||r===R_EAST)?1:0;
+  }
+  const idx=new Uint32Array(nq*6);
+  for(let j=0,q=0;j<GH-1;j++)for(let k=0;k<GW-1;k++){const a=j*GW+k;if(!(isL(a)||isL(a+1)||isL(a+GW)||isL(a+GW+1)))continue;
+    const A=vid[a],B=vid[a+1],C=vid[a+GW],Dv=vid[a+GW+1];idx[q++]=A;idx[q++]=C;idx[q++]=B;idx[q++]=B;idx[q++]=C;idx[q++]=Dv;}
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.BufferAttribute(pos,3)); geo.setAttribute('aK',new THREE.BufferAttribute(aK,3)); geo.setAttribute('aMy',new THREE.BufferAttribute(aMy,1));
+  geo.setIndex(new THREE.BufferAttribute(idx,1)); geo.computeBoundingSphere();
+  const fogU={uFog:{value:FOGC},uFogD:{value:FOGD}};
+  G.tmat=new THREE.ShaderMaterial({vertexShader:TERRAIN_VS,fragmentShader:TERRAIN_FS,
+    uniforms:{tCol:{value:tCol},tNrm:{value:tNrm},tLit:{value:tLit},uSun:{value:new THREE.Vector3(-0.70,0.60,0.38).normalize()},uBase:{value:BASE},uHaze:{value:0},...fogU}});
+  G.terrain=new THREE.Mesh(geo,G.tmat); scene.add(G.terrain);
+
+  // floor: dark grid with a glow around the coasts
+  const fl=new THREE.Mesh(new THREE.PlaneGeometry(240,240).rotateX(-Math.PI/2),new THREE.ShaderMaterial({uniforms:{tMeta:{value:tMeta},...fogU},
+    vertexShader:'varying vec3 vW;varying vec3 vV;void main(){vW=position;vec4 mv=modelViewMatrix*vec4(position,1.0);vV=mv.xyz;gl_Position=projectionMatrix*mv;}',
+    fragmentShader:`uniform sampler2D tMeta;uniform vec3 uFog;uniform float uFogD;varying vec3 vW;varying vec3 vV;${FLOOR_GLSL}
+      void main(){vec2 uv=vec2((vW.x+13.0)/26.0,(vW.z+7.5)/15.0);float g=(uv.x>0.0&&uv.x<1.0&&uv.y>0.0&&uv.y<1.0)?texture2D(tMeta,uv).g:0.0;gl_FragColor=vec4(fogged(floorCol(vW,g),length(vV)),1.0);}`}));
+  fl.position.y=BASE-0.003; scene.add(fl);
+  const frame=[[94,8],[120,8],[120,-7],[94,-7],[94,8]].map(([lo,la])=>P(lo,la,BASE+0.004));
+  scene.add(fatLine(frame,new THREE.Color(0.12,0.5,0.7),1,0.55));
+
+  // province and state borders, lit
+  G.prov=new THREE.Group();
+  for(const ring of window.PROV_LINES){if(ring.length<2)continue;G.prov.add(fatLine(drape(ring,0.02,0.01),new THREE.Color(0.85,0.95,1.0),1.0,0.32));}
+  scene.add(G.prov);
+
+  // region outlines + glow walls
+  const COL={sumatra:new THREE.Color(1.15,0.62,0.2),kalimantan:new THREE.Color(1.15,0.62,0.2),pen_my:new THREE.Color(0.28,0.95,1.3),east_my:new THREE.Color(0.28,0.95,1.3)};
+  G.regions={};
+  for(const f of window.REGIONS.features){
+    const id=f.properties.id, grp=new THREE.Group(); grp.userData={lines:[],walls:[]};
+    const polys=f.geometry.type==='Polygon'?[f.geometry.coordinates]:f.geometry.coordinates;
+    for(const poly of polys){
+      const xs=poly[0].map(p=>p[0]),ys=poly[0].map(p=>p[1]); if(Math.max(...xs)-Math.min(...xs)<0.3&&Math.max(...ys)-Math.min(...ys)<0.3)continue;   // skip islets: their outline would read as a blob
+      const pts=drape(poly[0],0.02,0.02);
+      const l=fatLine(pts,COL[id],1.5,0); grp.add(l); grp.userData.lines.push(l);
+      const wp=[],wh=[];
+      for(let i=0;i<pts.length-1;i++){const a=pts[i],b=pts[i+1];wp.push(a.x,a.y,a.z,b.x,b.y,b.z,b.x,b.y,b.z,a.x,a.y,a.z,b.x,b.y,b.z,a.x,a.y,a.z);wh.push(0,0,1,0,1,1);}
+      const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.Float32BufferAttribute(wp,3)); g.setAttribute('h',new THREE.Float32BufferAttribute(wh,1));
+      const m=new THREE.ShaderMaterial({transparent:true,depthWrite:false,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,toneMapped:false,
+        uniforms:{uC:{value:COL[id]},uH:{value:0},uO:{value:0}},
+        vertexShader:'attribute float h;uniform float uH;varying float vh;void main(){vh=h;vec3 p=position;p.y+=h*0.30*uH;gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);}',
+        fragmentShader:'uniform vec3 uC;uniform float uO;varying float vh;void main(){float a=pow(clamp(1.0-vh,0.0,1.0),2.4)*uO*0.32;gl_FragColor=vec4(uC*a,a);}'});
+      const w=new THREE.Mesh(g,m); grp.add(w); grp.userData.walls.push(m);
+    }
+    scene.add(grp); G.regions[id]=grp;
+  }
+
+  // hotspot columns (Indonesia only) + ember glow at their feet
+  const MAX=6000; const box=new THREE.CylinderGeometry(0.006,0.024,1,6,1,true); box.translate(0,0.5,0);
+  box.setAttribute('aT',new THREE.InstancedBufferAttribute(new Float32Array(MAX),1));
+  const hm=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,toneMapped:false,
+    vertexShader:'attribute float aT;varying float vy;varying float vt;void main(){vy=position.y;vt=aT;gl_Position=projectionMatrix*modelViewMatrix*instanceMatrix*vec4(position,1.0);}',
+    fragmentShader:`varying float vy;varying float vt;void main(){
+      vec3 lo=vec3(1.0,0.74,0.20),mid=vec3(1.0,0.42,0.08),hi=vec3(1.25,0.16,0.06);
+      vec3 c=vt<0.5?mix(lo,mid,vt*2.0):mix(mid,hi,vt*2.0-1.0);
+      float a=mix(1.0,0.5,pow(clamp(vy,0.0,1.0),0.8))*(0.55+0.45*vt);
+      gl_FragColor=vec4(c*a*(0.85+0.65*vt),a);}`});
+  G.hot=new THREE.InstancedMesh(box,hm,MAX); G.hot.count=0; G.hot.frustumCulled=false; scene.add(G.hot);
+  const eg=new THREE.BufferGeometry(); eg.setAttribute('position',new THREE.BufferAttribute(new Float32Array(MAX*3),3)); eg.setAttribute('aT',new THREE.BufferAttribute(new Float32Array(MAX),1));
+  G.ember=new THREE.Points(eg,new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,toneMapped:false,uniforms:{uPx:U.px,uG:{value:0}},
+    vertexShader:'attribute float aT;uniform float uPx,uG;varying float vt;void main(){vt=aT;vec4 mv=modelViewMatrix*vec4(position,1.0);gl_PointSize=min((0.26+0.30*aT)*uG*uPx/-mv.z,160.0);gl_Position=projectionMatrix*mv;}',
+    fragmentShader:'varying float vt;void main(){float d=length(gl_PointCoord-0.5)*2.0;float a=pow(max(1.0-d,0.0),1.8)*(0.10+0.55*vt);gl_FragColor=vec4(vec3(1.0,0.38,0.08)*a,a);}'}));
+  G.ember.frustumCulled=false; G.ember.geometry.setDrawRange(0,0); scene.add(G.ember);
+  G.hotState={grow:0,list:[]};
+
+  // smoke: particles leave the Indonesian hotspot cells and drift to Malaysia (schematic)
+  const SN=9000, sg=new THREE.BufferGeometry();
+  sg.setAttribute('position',new THREE.BufferAttribute(new Float32Array(SN*3),3));
+  sg.setAttribute('aSrc',new THREE.BufferAttribute(new Float32Array(SN*3),3));
+  sg.setAttribute('aDst',new THREE.BufferAttribute(new Float32Array(SN*3),3));
+  const seed=new Float32Array(SN*4); for(let i=0;i<seed.length;i++)seed[i]=Math.random();
+  sg.setAttribute('aSeed',new THREE.BufferAttribute(seed,4));
+  G.smoke=new THREE.Points(sg,new THREE.ShaderMaterial({transparent:true,depthWrite:false,uniforms:{uTime:U.time,uPx:U.px,uO:{value:0}},
+    vertexShader:`attribute vec3 aSrc,aDst; attribute vec4 aSeed; uniform float uTime,uPx; varying float va;
+      void main(){
+        float t=fract(aSeed.x+uTime*0.028*(0.7+0.6*aSeed.y));
+        float te=1.0-pow(max(1.0-t,0.0),1.25);
+        vec3 dir=aDst-aSrc; float len=length(dir); vec3 perp=vec3(-dir.z,0.0,dir.x)/max(len,0.001);
+        vec3 ctrl=(aSrc+aDst)*0.5+perp*len*0.26*(aSeed.z-0.35);
+        vec3 p=mix(mix(aSrc,ctrl,te),mix(ctrl,aDst,te),te);
+        float sp=0.04+te*0.5;
+        p.x+=(aSeed.z-0.5)*sp*2.0+sin(uTime*0.4+aSeed.w*40.0)*0.03;
+        p.z+=(aSeed.w-0.5)*sp*2.0+cos(uTime*0.33+aSeed.z*40.0)*0.03;
+        p.y=mix(aSrc.y,0.16+0.22*aSeed.w,te)+0.05+sin(te*3.14159)*0.26*(0.5+aSeed.y);
+        va=smoothstep(0.0,0.05,t)*(1.0-smoothstep(0.78,1.0,t))*(1.0-0.45*te);
+        vec4 mv=modelViewMatrix*vec4(p,1.0);
+        gl_PointSize=min((0.09+te*0.40)*uPx/-mv.z,200.0); gl_Position=projectionMatrix*mv;}`,
+    fragmentShader:`uniform float uO; varying float va;
+      void main(){float d=length(gl_PointCoord-0.5)*2.0;float a=pow(max(1.0-d,0.0),1.6)*va*uO*0.055;gl_FragColor=vec4(vec3(0.50,0.47,0.42),a);}`}));
+  G.smoke.frustumCulled=false; G.smoke.geometry.setDrawRange(0,0); G.smoke.userData={n:SN,amount:1}; scene.add(G.smoke);
+  // receiving points in Malaysia
+  G.dst={[R_PEN]:[],[R_EAST]:[]};
+  for(let j=4;j<GH;j+=10)for(let k=4;k<GW;k+=10){const r=RID[j*GW+k];if(r===R_PEN||r===R_EAST)G.dst[r].push([94+(k+0.5)*STEP,8-(j+0.5)*STEP]);}
+
+  // monsoon flow lines (schematic)
+  const routes=[
+    [[101.6,-0.4],[102.3,1.0],[102.1,2.4],[101.8,3.5]],
+    [[104.3,-3.1],[104.5,-1.2],[104.2,0.5],[103.6,1.9]],
+    [[110.6,-0.6],[110.2,0.4],[110.3,1.2],[110.9,2.0]],
+    [[113.6,-2.2],[113.0,-0.4],[112.6,1.2],[112.9,2.6]]
+  ];
+  G.flows=[];
+  for(const r of routes){
+    const curve=new THREE.CatmullRomCurve3(r.map(([lo,la],i)=>P(lo,la,0.42+Math.sin(i/3*Math.PI)*0.35)));
+    const l=fatLine(curve.getPoints(80),new THREE.Color(0.95,0.97,1.0),1.6,0,{dashed:true,dashSize:0.12,gapSize:0.1});
+    scene.add(l); G.flows.push(l);
+  }
+
+  // 0.1-degree grid over Sumatra (method slide)
+  const gp=[];
+  for(let lo=95;lo<=106.01;lo+=0.1){const pts=drape([[lo,6],[lo,-6]],0.03,0.05);for(let i=0;i<pts.length-1;i++)gp.push(...pts[i].toArray(),...pts[i+1].toArray());}
+  for(let la=-6;la<=6.01;la+=0.1){const pts=drape([[95,la],[106,la]],0.03,0.05);for(let i=0;i<pts.length-1;i++)gp.push(...pts[i].toArray(),...pts[i+1].toArray());}
+  const gg=new THREE.BufferGeometry(); gg.setAttribute('position',new THREE.Float32BufferAttribute(gp,3));
+  G.grid=new THREE.LineSegments(gg,new THREE.LineBasicMaterial({color:0x38d6ff,transparent:true,opacity:0,depthWrite:false,blending:THREE.AdditiveBlending})); scene.add(G.grid);
+
+  // labels
+  const L=(html,cls,lon,lat,lift=0.35)=>{const d=document.createElement('div');d.className=cls;d.innerHTML=html;const o=new CSS2DObject(d);o.position.copy(P(lon,lat,yAt(lon,lat)+lift));scene.add(o);return d;};
+  G.labels={
+    sum:L('SUMATRA<small>INDONESIA · FIRE SOURCE</small>','lbl fire',100.4,-1.0,0.75), kal:L('KALIMANTAN<small>INDONESIA · FIRE SOURCE</small>','lbl fire',113.6,-1.2,0.75),
+    pen:L('PENINSULAR MALAYSIA<small>RECEIVES THE HAZE</small>','lbl cy',102.5,4.9,0.8), sar:L('SARAWAK','lbl cy',113.3,2.9,0.8), sab:L('SABAH','lbl cy',116.9,5.6,0.8),
+    str:L('STRAIT OF MALACCA','lbl sm',99.5,3.5,BASE+0.12),
+    jb:L('<i></i><span>JOHOR BAHRU · LOCAL EVENT</span>','pin',103.76,1.49,0.06),
+    kl:L('<i></i><span>KUALA LUMPUR</span>','pin',101.69,3.14,0.06),
+    kch:L('<i></i><span>KUCHING</span>','pin',110.35,1.55,0.06),
+    wind:L('SMOKE PATH · SW MONSOON, JUN–SEP (SCHEMATIC)','wind',107.3,-0.6,0.5)
+  };
+  G.labels.wind.style.opacity=0;
+}
+
+/* ---------- hotspots: only cells that lie in Sumatra or Kalimantan ---------- */
+const cellCache=new Map();
+function cellInfo(ix,iy){                                 // 0.2-degree cell -> [lon,lat,region] on Indonesian land, or null
+  const k=ix*1000+iy; if(cellCache.has(k))return cellCache.get(k);
+  let n1=0,n2=0,nm=0,sx=0,sy=0;
+  for(let j=iy*CPX;j<iy*CPX+CPX&&j<GH;j++)for(let i=ix*CPX;i<ix*CPX+CPX&&i<GW;i++){const r=RID[j*GW+i];if(r===R_SUM||r===R_KAL){r===R_SUM?n1++:n2++;sx+=i;sy+=j;}else if(r===R_PEN||r===R_EAST)nm++;}
+  const n=n1+n2; let out=null;
+  if(n>=12&&n>=nm)out=[94+(sx/n+0.5)*STEP,8-(sy/n+0.5)*STEP,n1>=n2?R_SUM:R_KAL];
+  cellCache.set(k,out); return out;
+}
+function cellsFor(sensor,year,region){
+  const src=D.cells[sensor]; const acc=new Map();
+  const years=year==='all'?Object.keys(src):[String(year)];
+  for(const y of years){const a=src[y];if(!a)continue;for(let i=0;i<a.length;i+=3){const k=a[i]*1000+a[i+1];acc.set(k,(acc.get(k)||0)+a[i+2]);}}
+  const list=[];
+  for(const [k,v] of acc){const c=cellInfo(Math.floor(k/1000),k%1000);if(!c)continue;if(region&&c[2]!==region)continue;list.push([c[0],c[1],v,c[2]]);}
+  return list;
+}
+function annual(key){const r=D.monthly[key];const o={};r.v.forEach((m,i)=>o[r.y0+i]=m.reduce((a,b)=>a+b,0));return o;}
+function upwindCount(sensor,year,region){                  // exact FIRMS counts for Sumatra and/or Kalimantan
+  let t=0;
+  for(const [id,name] of [[R_SUM,'sumatra'],[R_KAL,'kalimantan']]){if(region&&region!==id)continue;const a=annual(`${sensor}_${name}`);t+=year==='all'?Object.values(a).reduce((s,v)=>s+v,0):(a[year]||0);}
+  return t;
+}
+let MAXYEAR=1;
+const _m=new THREE.Matrix4();
+function renderHot(){
+  const {list,maxV,grow,hScale,pw}=G.hotState; const n=Math.min(list.length,G.hot.instanceMatrix.count);
+  const ep=G.ember.geometry.attributes.position;
+  for(let i=0;i<n;i++){const [lo,la,v]=list[i];const tt=Math.pow(v/maxV,pw);const h=tt<0.14?0.0001:(0.02+tt*hScale)*grow;const y=yAt(lo,la);
+    _m.makeScale(1,h,1);_m.setPosition(lo-107,y,-(la-0.5));G.hot.setMatrixAt(i,_m);ep.setXYZ(i,lo-107,y+0.03,-(la-0.5));}
+  G.hot.count=n; G.hot.instanceMatrix.needsUpdate=true; ep.needsUpdate=true; G.ember.geometry.setDrawRange(0,n); G.ember.material.uniforms.uG.value=grow;
+}
+function seedSmoke(list){                                  // each particle: a hotspot cell -> a point in the Malaysian region downwind
+  const g=G.smoke.geometry, S=g.attributes.aSrc, T=g.attributes.aDst, n=G.smoke.userData.n;
+  if(!list.length){g.setDrawRange(0,0);return;}
+  const cum=[];let tot=0;for(const c of list){tot+=Math.sqrt(c[2]);cum.push(tot);}
+  for(let i=0;i<n;i++){
+    const r=Math.random()*tot;let a=0,b=cum.length-1;while(a<b){const m=(a+b)>>1;if(cum[m]<r)a=m+1;else b=m;}
+    const c=list[a], lo=c[0]+(Math.random()-0.5)*0.2, la=c[1]+(Math.random()-0.5)*0.2;
+    const pool=G.dst[c[3]===R_SUM?R_PEN:R_EAST]; let best=null,bs=1e9;
+    for(let q=0;q<7;q++){const d=pool[(Math.random()*pool.length)|0];
+      let s=Math.hypot(d[0]-lo,d[1]-la)*(0.75+Math.random()*0.7); if(d[1]<la+0.3)s+=6; if(s<bs){bs=s;best=d;}}
+    S.setXYZ(i,lo-107,yAt(lo,la),-(la-0.5)); T.setXYZ(i,best[0]-107,0,-(best[1]-0.5));
+  }
+  S.needsUpdate=true; T.needsUpdate=true;
+  g.setDrawRange(0,Math.round(n*G.smoke.userData.amount));
+}
+function setHot(sensor,year,opts={}){
+  const list=cellsFor(sensor,year,opts.region);
+  list.sort((a,b)=>a[2]-b[2]);
+  list.splice(0,Math.floor(list.length*(year==='all'?0.6:0.2)));   // keep the most active cells so the land stays readable
+  if(list.length>G.hot.instanceMatrix.count)list.splice(0,list.length-G.hot.instanceMatrix.count);
+  const maxV=list.reduce((m,x)=>Math.max(m,x[2]),1), pw=year==='all'?0.85:0.5;
+  const aT=G.hot.geometry.attributes.aT, eT=G.ember.geometry.attributes.aT;
+  for(let i=0;i<list.length;i++){const t=Math.pow(list[i][2]/maxV,pw);aT.setX(i,t);eT.setX(i,t);}
+  aT.needsUpdate=true; eT.needsUpdate=true;
+  Object.assign(G.hotState,{list,maxV,pw,hScale:opts.hScale??1.1});
+  const total=upwindCount(sensor,year,opts.region);
+  G.smoke.userData.amount=year==='all'?1:Math.max(0.12,Math.min(1,Math.sqrt(upwindCount('modis',Math.min(year,2025),opts.region)/MAXYEAR)));
+  seedSmoke(list);
+  G.hotState.grow=0; gsap.killTweensOf(G.hotState);
+  gsap.to(G.hotState,{grow:1,duration:REDUCED?0:1.1,ease:'power2.out',onUpdate:renderHot});
+  renderHot();
+  const where=opts.region===R_SUM?'SUMATRA':opts.region===R_KAL?'KALIMANTAN':'SUMATRA + KALIMANTAN';
+  document.getElementById('b-count').textContent=fmt(total);
+  document.getElementById('b-where').textContent=where;
+  document.getElementById('b-layer').textContent=`${sensor.toUpperCase()} ${year==='all'?(sensor==='modis'?'2000–2025':'2012–2025'):year}`;
+  return total;
+}
+function hideHot(){gsap.killTweensOf(G.hotState);gsap.to(G.hotState,{grow:0,duration:.4,onUpdate:renderHot});G.smoke.geometry.setDrawRange(0,0);document.getElementById('b-count').textContent='–';}
+
+/* ---------- visual state ---------- */
+function regionFx(ids,{wall=1,line=1}={}){
+  for(const [id,grp] of Object.entries(G.regions)){const on=ids.includes(id);
+    grp.userData.lines.forEach(l=>gsap.to(l.material,{opacity:on?line*0.8:0.1,duration:.8}));
+    grp.userData.walls.forEach(m=>gsap.to(m.uniforms.uO,{value:on?wall:0,duration:.8}));
+    grp.userData.walls.forEach(m=>gsap.to(m.uniforms.uH,{value:on?1:0,duration:REDUCED?0:1.4,ease:'power3.out'}));}
+}
+function smoke(level){                                     // 0 = off, 1 = full
+  gsap.to(G.smoke.material.uniforms.uO,{value:level,duration:1.2});
+  gsap.to(G.tmat.uniforms.uHaze,{value:level*G.smoke.userData.amount,duration:1.6});
+  G.flows.forEach(l=>gsap.to(l.material,{opacity:level>0.5?0.5:0,duration:1}));
+  gsap.to(G.labels.wind.style,{opacity:level>0.5?1:0,duration:.6});
+}
+function grid(on){gsap.to(G.grid.material,{opacity:on?0.28:0,duration:1});}
+function fly(pos,target,dur=2.4){
+  gsap.killTweensOf(camera.position);gsap.killTweensOf(controls.target);
+  const d=REDUCED?0:dur;
+  gsap.to(camera.position,{x:pos.x,y:pos.y,z:pos.z,duration:d,ease:'power2.inOut'});
+  gsap.to(controls.target,{x:target.x,y:target.y,z:target.z,duration:d,ease:'power2.inOut'});
+}
+let s3timer=null, exploreState={region:'sumatra',sensor:'modis',year:2015};
+const VIEWS={
+  wide:[P(106.8,-13.4,12.0),P(106.8,-0.2,0)],
+  problem:[P(101.4,-8.2,5.6),P(102.6,0.6,0)],
+  sensors:[P(102.9,-6.6,3.9),P(102.9,-1.0,0)],
+  method:[P(100.6,-4.4,7.0),P(100.6,0.4,0)],
+  sumatra:[P(100.4,-7.0,5.6),P(102.0,1.0,0)],
+  kalimantan:[P(112.4,-7.4,5.6),P(113.2,0.8,0)],
+  impact:[P(104.0,-6.4,6.4),P(107.0,2.4,0)],
+  outro:[P(107.0,-13.5,12.5),P(107.0,1.0,0)]
+};
+const ALL=['sumatra','kalimantan','pen_my','east_my'];
+const STATES=[
+  ()=>{regionFx(ALL,{wall:0.9});grid(false);setHot('modis','all');smoke(1);fly(...VIEWS.wide);},
+  ()=>{regionFx(ALL,{wall:0.7});grid(false);setHot('modis',2015);smoke(1);fly(...VIEWS.problem);},
+  ()=>{regionFx(['sumatra'],{wall:0.6});grid(false);let s='modis';const tick=()=>{setHot(s,2019,{region:R_SUM});document.getElementById('s3-sensor').textContent=s.toUpperCase();s=s==='modis'?'viirs':'modis';};tick();smoke(0);s3timer=setInterval(tick,3200);fly(...VIEWS.sensors);},
+  ()=>{regionFx(['sumatra'],{wall:0.5});grid(true);hideHot();smoke(0);fly(...VIEWS.method);},
+  ()=>{grid(false);applyExplore(true);},
+  ()=>{regionFx(ALL,{wall:1});grid(false);setHot('modis',2019);smoke(1);fly(...VIEWS.impact);},
+  ()=>{regionFx(ALL,{wall:0.6});grid(false);setHot('modis','all');smoke(0.6);fly(...VIEWS.outro,3);}
+];
+
+/* ---------- explore ---------- */
+function exploreHot(){const {region,sensor,year}=exploreState;setHot(sensor,year,{region:region==='sumatra'?R_SUM:R_KAL});smoke(1);}
+function applyExplore(flyTo){
+  const {region,sensor,year}=exploreState;
+  regionFx([region,region==='sumatra'?'pen_my':'east_my'],{wall:1});
+  const y=sensor==='viirs'&&year<2012?2012:year; exploreState.year=y;
+  document.getElementById('year').min=sensor==='viirs'?2012:2001; document.getElementById('year').value=y; document.getElementById('yout').textContent=y;
+  exploreHot();
+  if(flyTo)fly(...VIEWS[region]);
+  drawCalendar();
+}
+function press(a,b,on){document.getElementById(a).setAttribute('aria-pressed',on);document.getElementById(b).setAttribute('aria-pressed',!on);}
+document.getElementById('b-pen').onclick=()=>{exploreState.region='sumatra';press('b-pen','b-east',true);applyExplore(true);};
+document.getElementById('b-east').onclick=()=>{exploreState.region='kalimantan';press('b-pen','b-east',false);applyExplore(true);};
+document.getElementById('b-modis').onclick=()=>{exploreState.sensor='modis';press('b-modis','b-viirs',true);applyExplore(false);};
+document.getElementById('b-viirs').onclick=()=>{exploreState.sensor='viirs';press('b-modis','b-viirs',false);applyExplore(false);};
+document.getElementById('year').oninput=e=>{exploreState.year=+e.target.value;document.getElementById('yout').textContent=e.target.value;exploreHot();drawCalendar();};
+
+const NS='http://www.w3.org/2000/svg';
+const el=(t,a={},txt)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);if(txt!=null)e.textContent=txt;return e;};
+const RAMP=['#0c2230','#3d2a14','#7a4210','#c46a14','#ff9a2e','#ffd36b'];
+function rampColor(t){t=Math.max(0,Math.min(1,t))*(RAMP.length-1);const i=Math.min(RAMP.length-2,Math.floor(t)),f=t-i;const a=RAMP[i],b=RAMP[i+1];const h=s=>[1,3,5].map(j=>parseInt(s.slice(j,j+2),16));const A=h(a),B=h(b);return `rgb(${A.map((v,k)=>Math.round(v+(B[k]-v)*f)).join(',')})`;}
+function drawCalendar(){
+  const {region,sensor,year}=exploreState; const s=document.getElementById('cal'); s.innerHTML='';
+  const rec=D.monthly[`${sensor}_${region}`]; const name=region==='sumatra'?'Sumatra':'Kalimantan';
+  document.getElementById('cal-title').textContent=`Burning calendar · ${name} · ${sensor.toUpperCase()}`;
+  const rows=rec.v.map((r,i)=>[rec.y0+i,r]).filter(([y])=>y>=2001);
+  const max=Math.max(...rows.flatMap(r=>r[1])); const lg=v=>Math.pow(v/max,0.4);
+  const x0=40,y0=16,cw=24,ch=Math.min(10.6,270/rows.length);
+  'JFMAMJJASOND'.split('').forEach((m,i)=>s.appendChild(el('text',{x:x0+i*cw+cw/2,y:10,'text-anchor':'middle','font-size':9,fill:'#7fa4b5'},m)));
+  rows.forEach(([y,r],j)=>{
+    const yy=y0+j*ch; const sel=y===year;
+    if(y%5===0||sel)s.appendChild(el('text',{x:x0-6,y:yy+ch*0.78,'text-anchor':'end','font-size':sel?10:8.5,fill:sel?'#ffb03a':'#7fa4b5','font-weight':sel?600:400},y));
+    r.forEach((v,i)=>{const c=el('rect',{class:'c',x:x0+i*cw+1,y:yy+0.6,width:cw-2,height:ch-1.2,fill:v?rampColor(lg(v)):'#08161f'});
+      c.appendChild(el('title',{},`${'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ')[i]} ${y}: ${fmt(v)} hotspots`));
+      c.addEventListener('click',()=>{exploreState.year=y;document.getElementById('year').value=y;document.getElementById('yout').textContent=y;exploreHot();drawCalendar();});
+      s.appendChild(c);});
+    if(sel)s.appendChild(el('rect',{x:x0-1,y:yy,width:cw*12+2,height:ch,fill:'none',stroke:'#ffb03a','stroke-width':1.2}));
+  });
+  s.setAttribute('viewBox',`0 0 340 ${y0+rows.length*ch+4}`);
+}
+
+/* ---------- charts & numbers ---------- */
+function stats(){
+  const mS=annual('modis_sumatra'),mK=annual('modis_kalimantan'),vS=annual('viirs_sumatra'),vK=annual('viirs_kalimantan');
+  const M={},V={};for(const y in mS)M[y]=mS[y]+mK[y];for(const y in vS)V[y]=vS[y]+vK[y];
+  MAXYEAR=Math.max(...Object.values(M));
+  const sum=(o,a=0,b=9999)=>Object.entries(o).filter(([y])=>y>=a&&y<=b).reduce((s,[,v])=>s+v,0);
+  document.getElementById('s1-modis').textContent=fmt(sum(M));
+  document.getElementById('s1-viirs').textContent=fmt(sum(V));
+  const my15=annual('modis_pen_my')[2015]+annual('modis_east_my')[2015];
+  document.getElementById('s2-up').textContent=fmt(M[2015]);
+  document.getElementById('s2-my').textContent=fmt(my15);
+  document.getElementById('s2-x').textContent=Math.round(M[2015]/my15)+'×';
+  const ratio=sum(V,2012,2025)/sum(M,2012,2025);
+  document.getElementById('s3-ratio').textContent=ratio.toFixed(1)+'×';
+  document.getElementById('s3-jump').textContent=(V[2012]/M[2011]).toFixed(1)+'×';
+  const s=document.getElementById('chart'); const W=360,H=230,l=46,r=8,t=10,b=24;
+  const years=[];for(let y=2001;y<=2025;y++)years.push(y);
+  const max=Math.max(...Object.values(V));const X=y=>l+(y-2001)/24*(W-l-r),Y=v=>t+(1-v/max)*(H-t-b);
+  for(let k=0;k<=4;k++){const v=max*k/4;s.appendChild(el('line',{x1:l,x2:W-r,y1:Y(v),y2:Y(v),stroke:'rgba(56,214,255,.12)'}));s.appendChild(el('text',{x:l-6,y:Y(v)+3,'text-anchor':'end','font-size':9,fill:'#7fa4b5'},k?Math.round(v/1000)+'k':'0'));}
+  [2001,2006,2011,2016,2021,2025].forEach(y=>s.appendChild(el('text',{x:X(y),y:H-8,'text-anchor':'middle','font-size':9,fill:'#7fa4b5'},y)));
+  s.appendChild(el('rect',{x:X(2012),y:t,width:X(2025)-X(2012),height:H-t-b,fill:'rgba(56,214,255,.05)'}));
+  s.appendChild(el('text',{x:X(2012)+4,y:t+10,'font-size':8.5,fill:'#7fa4b5'},'OVERLAP 2012–2025'));
+  const path=(pts,c,w,dash)=>s.appendChild(el('polyline',{points:pts.map(([x,y])=>`${x},${y}`).join(' '),fill:'none',stroke:c,'stroke-width':w,'stroke-dasharray':dash||'','stroke-linejoin':'round'}));
+  path(years.map(y=>[X(y),Y(y<=2011?M[y]:V[y])]),'#ff5a2e',1.6,'4 3');
+  path(years.map(y=>[X(y),Y(M[y])]),'#ffb03a',2.2);
+  path(years.filter(y=>y>=2012).map(y=>[X(y),Y(V[y])]),'#38d6ff',2.2);
+  s.appendChild(el('circle',{cx:X(2012),cy:Y(V[2012]),r:3.5,fill:'#ff5a2e'}));
+  s.appendChild(el('text',{x:X(2012)-4,y:Y(V[2012])-7,'text-anchor':'end','font-size':9,fill:'#ff5a2e'},'false jump'));
+}
+
+/* ---------- slides ---------- */
+const slides=[...document.querySelectorAll('.slide')], tabs=[...document.querySelectorAll('.tabs button')];
+let cur=-1;
+function go(i){
+  i=Math.max(0,Math.min(slides.length-1,i)); if(i===cur)return;
+  if(s3timer){clearInterval(s3timer);s3timer=null;}
+  slides.forEach((s,k)=>s.classList.toggle('on',k===i)); tabs.forEach((t,k)=>t.setAttribute('aria-current',k===i));
+  document.getElementById('cnum').textContent=String(i+1).padStart(2,'0');
+  cur=i; STATES[i](); try{history.replaceState(null,'','#slide-'+(i+1));}catch(e){}
+}
+tabs.forEach(t=>t.onclick=()=>go(+t.dataset.go));
+document.getElementById('prev').onclick=()=>go(cur-1); document.getElementById('next').onclick=()=>go(cur+1);
+addEventListener('keydown',e=>{if(e.target.tagName==='INPUT')return;
+  if(['ArrowRight','PageDown',' '].includes(e.key)){e.preventDefault();go(cur+1);}
+  if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();go(cur-1);}
+  if(/^[1-7]$/.test(e.key))go(+e.key-1);});
+
+/* ---------- loop ---------- */
+const clock=new THREE.Clock(); const roC=document.getElementById('ro-center');
+function loop(){
+  const dt=Math.min(clock.getDelta(),0.05); U.time.value=REDUCED?40:clock.elapsedTime;
+  controls.update();
+  if(!REDUCED)G.flows.forEach(l=>{l.material.dashOffset-=dt*0.16;});
+  const tg=controls.target; roC.textContent=`${Math.abs(0.5-tg.z).toFixed(2)}°${0.5-tg.z>=0?'N':'S'} ${(tg.x+107).toFixed(2)}°E`;
+  composer.render(); labelR.render(scene,camera);
+  requestAnimationFrame(loop);
+}
+
+/* ---------- start ---------- */
+(async()=>{
+  resize();
+  try{await build();}catch(e){document.getElementById('loading').textContent='COULD NOT LOAD MAP DATA · '+e.message;console.error(e);return;}
+  stats();
+  const start=parseInt((location.hash.match(/slide-(\d)/)||[])[1]||'1',10)-1;
+  if(start===0&&!REDUCED){ // intro: close over the peat of Riau, then pull out
+    camera.position.copy(P(101.6,-2.6,2.4)); controls.target.copy(P(101.7,0.6,0));
+  }else{camera.position.copy(VIEWS.wide[0]);controls.target.copy(VIEWS.wide[1]);}
+  document.getElementById('loading').classList.add('done');
+  loop();
+  if(start===0&&!REDUCED){
+    slides[0].classList.add('on');tabs[0].setAttribute('aria-current',true);cur=0;
+    regionFx(['sumatra'],{wall:1});
+    setTimeout(()=>{STATES[0]();fly(...VIEWS.wide,4.2);},900);
+  }else go(start);
+})();
+})();
+</script>
+</body>
+</html>
