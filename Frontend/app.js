@@ -329,22 +329,7 @@ function setYM(year, month) {
 let scopeRequest = 0;
 let allRegionsSeries, previousScope;
 
-function switchDashboardScope(entering) {
-  ++scopeRequest;
-  if (entering) {
-    previousScope = { scope: state.scope, series: state.series };
-    state.scope = "All";
-    state.series = allRegionsSeries;
-  } else {
-    Object.assign(state, previousScope);
-    previousScope = null;
-  }
-  $("#f-scope").value = state.scope;
-  setStatus("");
-}
-
 async function changeScope(scope) {
-  if (route.page === "dashboard") return;
   const request = ++scopeRequest;
   setStatus("Loading…");
   try {
@@ -1627,6 +1612,7 @@ const pages = {
   docs: "Docs",
 };
 const sections = {
+  dashboard: ["calendar", "hotspots", "history"],
   data: ["sources", "methods", "calibration", "world"],
   docs: ["key", "catalogue", "climate", "world", "skill", "limits", "files", "reproduce"],
 };
@@ -1707,9 +1693,6 @@ function updateRoute(moveFocus = false) {
   const section = options.includes(requested) ? requested : options[0];
   const changedPage = route.page !== page;
   const changedSection = route.section !== section;
-  if (ready && changedPage && (page === "dashboard" || route.page === "dashboard")) {
-    switchDashboardScope(page === "dashboard");
-  }
   const legacyPanel = ["calendar", "hotspots", "history"].includes(requested) ? requested : null;
   const jumpTarget = page === "dashboard" ? dashboardPanel(params.get("panel") ?? legacyPanel) : null;
   const panel = jumpTarget?.dataset.dashboardPanel ?? null;
@@ -1727,15 +1710,11 @@ function updateRoute(moveFocus = false) {
     if (link.dataset.nav === page) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
-  if (page === "dashboard") {
-    highlightDashboardSection(panel);
-  } else {
-    view.querySelectorAll(".section-nav a").forEach((link) => {
-      const linkParams = new URLSearchParams(link.hash.split("?")[1]);
-      if (linkParams.get("section") === section) link.setAttribute("aria-current", "page");
-      else link.removeAttribute("aria-current");
-    });
-  }
+  view.querySelectorAll(".section-nav a").forEach((link) => {
+    const linkParams = new URLSearchParams(link.hash.split("?")[1]);
+    if (linkParams.get("section") === section) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  });
 
   const filters = $("#filters");
   const slot = view.querySelector("[data-filters]");
@@ -1858,7 +1837,6 @@ async function boot() {
   cal.addEventListener("focusout", hideTip);
 
   ready = true;
-  if (route.page === "dashboard") switchDashboardScope(true);
   renderView(dashboardPanel(route.panel));
 }
 

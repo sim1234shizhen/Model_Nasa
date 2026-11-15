@@ -16,10 +16,23 @@ export function regionBounds(regions) {
   ];
 }
 
-export function frameExplorerMap(map, bounds, duration) {
+export function frameExplorerMap(map, focus, duration) {
   const { clientWidth, clientHeight } = map.getContainer();
   if (!clientWidth || !clientHeight) return;
   const padding = Math.min(60, clientWidth * 0.12, clientHeight * 0.12);
+  // A country outside the regional forecast is framed by centre + zoom, which
+  // handles countries that cross the date line without a world-wide bbox.
+  if (focus && !Array.isArray(focus) && focus.center) {
+    map.flyTo({
+      center: focus.center,
+      zoom: focus.zoom ?? 5,
+      pitch: 30,
+      bearing: 0,
+      duration,
+    });
+    return;
+  }
+  const bounds = Array.isArray(focus) ? focus : focus?.bounds;
   const target = bounds ? [[bounds[0], bounds[1]], [bounds[2], bounds[3]]] : HOME;
   map.fitBounds(target, { padding, pitch: 30, bearing: 0, maxZoom: 10, duration });
 }

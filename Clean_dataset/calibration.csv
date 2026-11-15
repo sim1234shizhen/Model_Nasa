@@ -1,6 +1,11 @@
 region,country,model,k,a,b,r2_in_sample,r2_leave_one_year_out,median_abs_pct_err_loyo,linear_mape_loyo,power_mape_loyo,corr,n_months
+Java,Indonesia,linear,5.99,5.722,0.958,0.955,0.954,29.8,29.8,33.5,0.978,167
 Kalimantan,Indonesia,power,2.695,7.451,0.881,0.99,0.989,10.5,29.4,10.5,0.993,167
+Maluku,Indonesia,power,3.291,5.107,0.926,0.974,0.97,25.3,30.9,25.3,0.985,167
+Nusa Tenggara,Indonesia,power,5.242,7.101,0.941,0.941,0.94,23.6,23.7,23.6,0.973,167
+Papua,Indonesia,power,3.103,6.967,0.873,0.964,0.964,18.1,22.7,18.1,0.995,167
 Peninsular Malaysia,Malaysia,linear,3.453,6.17,0.862,0.958,0.957,18.5,18.5,21.9,0.979,167
 Sabah,Malaysia,power,3.378,10.387,0.731,0.909,0.897,18.4,22.5,18.4,0.962,167
 Sarawak,Malaysia,linear,2.908,6.372,0.821,0.94,0.924,21.0,21.0,23.9,0.971,167
+Sulawesi,Indonesia,power,4.218,11.252,0.846,0.978,0.974,15.7,23.8,15.7,0.994,167
 Sumatra,Indonesia,power,2.764,7.185,0.876,0.985,0.982,11.7,19.1,11.7,0.994,167

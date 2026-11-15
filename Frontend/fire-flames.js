@@ -133,6 +133,9 @@ export function createFlames(map, opts = {}) {
   const reduced = !!opts.reduced;
   const classify = opts.classify || ((days) => days >= 8 ? 2 : days >= 3 ? 1 : 0);
   const heightValue = opts.heightValue || ((value) => value);
+  // 0..1 multiplier on the flame width, so the drawn size tracks the value itself
+  // and not just its band. Without it a barely-at-risk cell looks like a severe one.
+  const sizeValue = opts.sizeValue || (() => 1);
   const canvas = document.createElement("canvas");
   canvas.className = "fire-flames";
   canvas.setAttribute("aria-hidden", "true");
@@ -162,7 +165,8 @@ export function createFlames(map, opts = {}) {
   };
   const bufBody = gl.createBuffer(), bufEmber = gl.createBuffer();
 
-  let cells = [], cellDeg = 0.1, hidden = [false, false, false], on = true;
+  let cells = [], gridCells = [], countryMarkers = [];
+  let hidden = [false, false, false], on = true, gridVisible = true;
   let body = new Float32Array(0), ember = new Float32Array(0), vis = [];
   let raf = 0, inView = true;
   const t0 = performance.now();
@@ -189,11 +193,17 @@ export function createFlames(map, opts = {}) {
     const pitchK = 0.7 + 0.3 * Math.sin(Math.min(map.getPitch(), 70) * Math.PI / 180) / Math.sin(70 * Math.PI / 180);
     vis.length = 0;
     for (const c of cells) {
-      if (hidden[c.k] || occluded(c.lo, c.la)) continue;
-      const p = map.project([c.lo, c.la]), q = map.project([c.lo + cellDeg, c.la]);
-      const cellPx = Math.hypot(q.x - p.x, q.y - p.y);
-      // heavier fire = bigger ball, and a little taller with more days
-      const w = Math.min(Math.max(cellPx * [0.6, 0.78, 0.95][c.k], [9, 13, 18][c.k]), [130, 170, 210][c.k]);
+      if (!c.country && (!gridVisible || (!c.world && hidden[c.k]))) continue;
+      if (occluded(c.lo, c.la)) continue;
+      const p = map.project([c.lo, c.la]);
+      if (p.x < -200 || p.x > W + 200 || p.y < -75 || p.y > H + 360) continue;
+      let w = c.fixedWidth;
+      if (w == null) {
+        const q = map.project([c.lo + c.widthDeg, c.la]);
+        const cellPx = Math.hypot(q.x - p.x, q.y - p.y);
+        const minWidth = c.minWidth ?? [7, 10, 14][c.k];
+        w = Math.min(Math.max(cellPx * [0.6, 0.78, 0.95][c.k] * c.s, minWidth), [86, 116, 146][c.k]);
+      }
       const h = w * (1.0 + Math.min(c.height, 20) * 0.025) * pitchK;
       if (p.x < -w * 1.3 || p.x > W + w * 1.3 || p.y < -h * 0.3 || p.y > H + h * 1.6) continue;
       c.ax = p.x; c.ay = p.y; c.w = w; c.h = h;
@@ -249,16 +259,37 @@ export function createFlames(map, opts = {}) {
   }
   document.addEventListener("visibilitychange", () => { if (!document.hidden) kick(); });
 
+  function rebuildCells() {
+    cells = gridCells.concat(countryMarkers);
+    cells.forEach((cell, index) => { cell.i = index; });
+    body = new Float32Array(cells.length * 6 * 8);
+    ember = new Float32Array(cells.length * 8 * 8);
+    kick();
+  }
+
   return {
-    setCells(list, deg) {
-      cellDeg = deg;
-      cells = list.map(([lo, la, value], i) => ({
-        lo: lo + deg / 2, la: la + deg / 2, height: heightValue(value), k: classify(value), i, seed: rand(lo, la),
+    setCells(list, deg, worldCells = []) {
+      gridCells = list.map(([lo, la, value]) => ({
+        lo: lo + deg / 2, la: la + deg / 2, height: heightValue(value), k: classify(value),
+        widthDeg: deg, s: sizeValue(value), seed: rand(lo, la),
       }));
-      body = new Float32Array(cells.length * 6 * 8);
-      ember = new Float32Array(cells.length * 8 * 8);
-      kick();
+      for (const [lo, la, count] of worldCells) {
+        gridCells.push({
+          lo: lo + 0.5, la: la + 0.5, height: Math.log2(count + 1), k: 1,
+          widthDeg: 0.1, minWidth: 5 + 7 * Math.min(1, Math.log10(count + 1) / 3),
+          s: 1, seed: rand(lo, la), world: true,
+        });
+      }
+      rebuildCells();
     },
+    setCountryMarkers(points) {
+      countryMarkers = points.map(([lo, la, activity]) => ({
+        lo, la, height: 8 + 12 * activity, k: 1,
+        fixedWidth: 16 + 12 * activity, seed: rand(lo, la), country: true,
+      }));
+      rebuildCells();
+    },
+    setGridVisible(visible) { gridVisible = visible; kick(); },
     setHidden(h) { hidden = h.slice(); kick(); },
     setVisible(v) { on = !!v; canvas.style.display = on ? "" : "none"; kick(); },
   };
