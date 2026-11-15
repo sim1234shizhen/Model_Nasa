@@ -21,6 +21,9 @@ CLEAN_CSV = CLEAN_DIR / "clean_hotspots.csv"
 HARMONIZED_CSV = CLEAN_DIR / "harmonized_monthly.csv"
 CALIBRATION_CSV = CLEAN_DIR / "calibration.csv"
 
+# Whole-world outputs of step2_harmonize_global.py (override with env var GLOBAL_DIR)
+GLOBAL_DIR = Path(os.getenv("GLOBAL_DIR", PROJECT_ROOT / "Global_Dataset"))
+
 # The website (served by FastAPI at "/")
 FRONTEND_DIR = Path(os.getenv("FRONTEND_DIR", PROJECT_ROOT / "Frontend"))
 

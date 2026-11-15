@@ -19,3 +19,7 @@ backend/.cache/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Large local world dataset (4.4 GB), not for GitHub
+/Dataset (World)/
+/Dataset (World).zip

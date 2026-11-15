@@ -53,6 +53,22 @@ cd backend
 
 The first start converts `clean_hotspots.csv` into a faster format (about a minute). Later starts take seconds. If you re-run `calibration.py`, the site picks up the new results without a restart.
 
+## World Fire Atlas (whole world, `#/world`)
+The **World** page shows every country for 2003–2025, from the NASA FIRMS country yearly summary zips:
+```powershell
+# 1. Aggregate the zips (run once per sensor folder; step 1 only reads .zip files directly in the folder)
+backend\.venv\Scripts\python.exe step1_aggregate_global.py --zips "Dataset (World)" --out modis_monthly_counts.csv.gz
+backend\.venv\Scripts\python.exe step1_aggregate_global.py --zips "Dataset (World)\Viirs Noaa" --out global_monthly_counts.csv.gz
+# 2. Calibrate MODIS -> VIIRS NOAA-20 per country and write the files the website reads
+backend\.venv\Scripts\python.exe step2_harmonize_global.py --inputs modis_monthly_counts.csv.gz global_monthly_counts.csv.gz --outdir Clean_dataset\global
+```
+The page has a world map of 1° cells, a country ranking against each country's typical level, country time series and burning calendars, and the per-country calibration. Its endpoints are `/api/global/summary`, `/api/global/series?country=`, `/api/global/ranking?year=&month=` and `/api/global/map?year=&month=` (month 0 means the whole year). You can link to a view directly, e.g. `#/world?country=Indonesia&year=2019&month=9`.
+
+Validation (step 2):
+- The global factor is k = 2.54, and 156 countries have their own k.
+- The median leave-one-year-out R² across countries is 0.90.
+- Fitted on 2018–2023, it predicts 2024–2025 world monthly totals with R² 0.87, and the total comes out 7% low.
+
 ## Method
 - **Cleaning (`Clean.py`):** keeps vegetation fires only (FIRMS type 0) and removes duplicates. Drops low-confidence detections (MODIS confidence < 30, VIIRS "low"). Assigns each hotspot to a region (Peninsular Malaysia, Sarawak, Sabah, Sumatra, Kalimantan) and uses local-time dates.
 - **Harmonization (`calibration.py`):**

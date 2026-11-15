@@ -28,7 +28,14 @@
     const hits = names.filter((n) => n.toLowerCase().includes(wanted));
     return exact || (hits.length === 1 ? hits[0] : null);
   }
+  const gslug = (s) => String(s).replace(/[^A-Za-z0-9]+/g, "_");   // country names -> safe file names
+  const period = (p) => `${p.get("year")}-${String(+(p.get("month") || 0)).padStart(2, "0")}`;
   async function answer(path, p) {
+    // World page (export_static.py writes data/global/...)
+    if (path === "global/summary") return file("global/summary.json");
+    if (path === "global/series") return file(`global/series/${gslug(p.get("country") || "World")}.json`);
+    if (path === "global/ranking") return file(`global/ranking/${period(p)}.json`);
+    if (path === "global/map") return file(`global/map/${period(p)}.json`);
     if (path === "regions" || path === "calibration" || path === "enso" || path === "status") return file(path + ".json");
     if (path === "harmonized") return file(`harmonized/${slug(p.get("scope") || "All")}.json`);
     if (path === "calibration/points") return file(`calibration-points/${slug(p.get("region"))}.json`);
