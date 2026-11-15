@@ -1,5 +1,8 @@
 """Endpoints for the website: harmonized monthly series, calibration, hotspot map."""
-from fastapi import APIRouter, HTTPException, Query
+import re
+from datetime import date
+
+from fastapi import APIRouter, HTTPException, Query, Response
 
 from app.config import REGIONS
 from app.services import forecast as fc
@@ -52,6 +55,54 @@ def hotspot_grid(
 ):
     """Cleaned hotspots for one month, binned into grid cells for the map."""
     return _guard(svc.hotspot_grid, scope, year, month, sensor, cell)
+
+
+def _date_key(s: str, name: str) -> int:
+    try:
+        return int(date.fromisoformat(s).strftime("%Y%m%d"))
+    except ValueError:
+        raise HTTPException(422, f"{name} must be a date like 2019-09-14")
+
+
+def _range_args(start: str, end: str) -> tuple[int, int]:
+    a, b = _date_key(start, "start"), _date_key(end, "end")
+    if a > b:
+        raise HTTPException(422, "start must be on or before end")
+    return a, b
+
+
+@router.get("/hotspots/dates")
+def hotspot_dates():
+    """First and last date with cleaned hotspots."""
+    return _guard(svc.hotspot_dates)
+
+
+@router.get("/hotspots/range")
+def hotspot_range(
+    scope: str = Query("All"),
+    start: str = Query(..., description="First date, YYYY-MM-DD"),
+    end: str = Query(..., description="Last date, YYYY-MM-DD (inclusive)"),
+    sensor: str = Query("auto", pattern="^(auto|MODIS|VIIRS|both)$"),
+):
+    """Hotspots between two dates: totals, day-by-day counts, per-region breakdown and map points
+    (strongest 15,000 by FRP; the CSV endpoint has all of them)."""
+    a, b = _range_args(start, end)
+    return _guard(svc.hotspot_range, scope, a, b, sensor)
+
+
+@router.get("/hotspots/range.csv")
+def hotspot_range_csv(
+    scope: str = Query("All"),
+    start: str = Query(...),
+    end: str = Query(...),
+    sensor: str = Query("auto", pattern="^(auto|MODIS|VIIRS|both)$"),
+):
+    """Every cleaned hotspot between two dates as a CSV download."""
+    a, b = _range_args(start, end)
+    body = _guard(svc.hotspot_range_csv, scope, a, b, sensor)
+    name = f"fire_points_{re.sub(r'[^A-Za-z0-9]+', '_', scope)}_{start}_to_{end}.csv"
+    return Response(body, media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @router.get("/forecast")

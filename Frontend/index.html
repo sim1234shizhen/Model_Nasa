@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=ui-20261115y">
+  <link rel="stylesheet" href="styles.css?v=ui-20261115z">
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -293,6 +293,7 @@
           <a href="#/dashboard?section=calendar"><span class="db-tab-icon" aria-hidden="true">▦</span><span><b>Burning calendar</b><small>Every month of every year</small></span></a>
           <a href="#/dashboard?section=hotspots"><span class="db-tab-icon" aria-hidden="true">◉</span><span><b>Hotspot map</b><small>Where the fires were seen</small></span></a>
           <a href="#/dashboard?section=history"><span class="db-tab-icon" aria-hidden="true">▥</span><span><b>Historical comparison</b><small>One month across 23 years</small></span></a>
+          <a href="#/dashboard?section=range"><span class="db-tab-icon" aria-hidden="true">◷</span><span><b>Specific dates</b><small>Any day or date range, with downloads</small></span></a>
         </nav>
       </header>
       <div class="db-filterbar" data-filters></div>
@@ -319,6 +320,9 @@
           <summary>Show as table</summary>
           <div class="table-wrap" id="cal-table"></div>
         </details>
+        <div class="dl-bar" aria-label="Downloads">
+          <button type="button" class="dl-btn" data-dl="series-csv"><span aria-hidden="true">⬇</span> Calendar data (CSV)</button>
+        </div>
       </section>
     <section class="card db-card db-card-indigo">
       <div class="card-head">
@@ -336,6 +340,10 @@
       </div>
       <div class="legend" id="ts-legend"></div>
       <div class="chart-box"><canvas id="ts" aria-label="Monthly fire activity line chart" role="img"></canvas></div>
+      <div class="dl-bar" aria-label="Downloads">
+        <button type="button" class="dl-btn" data-dl="ts-png"><span aria-hidden="true">⬇</span> Chart (PNG)</button>
+        <button type="button" class="dl-btn" data-dl="series-csv"><span aria-hidden="true">⬇</span> Monthly data (CSV)</button>
+      </div>
     </section>
       </div>
       <div data-section="hotspots" hidden>
@@ -358,6 +366,10 @@
         </div>
         <div id="map" class="map"></div>
         <div class="scale" id="map-legend"></div>
+        <div class="dl-bar" aria-label="Downloads">
+          <button type="button" class="dl-btn dl-main" data-dl="month-points"><span aria-hidden="true">⬇</span> Fire points for this month (CSV)</button>
+          <button type="button" class="dl-btn" data-dl="month-range"><span aria-hidden="true">◷</span> Open in Specific dates</button>
+        </div>
       </section>
       </div>
       <div data-section="history" hidden>
@@ -379,6 +391,71 @@
         <div class="legend" id="hist-legend"></div>
         <div class="chart-box short"><canvas id="hist" aria-label="Same month across all years bar chart" role="img"></canvas></div>
         <div class="callout" id="hist-callout"></div>
+        <div class="dl-bar" aria-label="Downloads">
+          <button type="button" class="dl-btn" data-dl="hist-png"><span aria-hidden="true">⬇</span> Chart (PNG)</button>
+          <button type="button" class="dl-btn" data-dl="hist-csv"><span aria-hidden="true">⬇</span> Data (CSV)</button>
+        </div>
+      </section>
+      </div>
+      <div data-section="range" hidden>
+      <section class="card db-card db-card-teal" id="rg-card">
+        <div class="card-head">
+          <div class="db-card-title">
+            <span class="db-badge" aria-hidden="true">◷</span>
+            <div>
+              <h2>Fires on specific dates</h2>
+              <p class="note">Pick one day or a date range to see every satellite fire detection in it: totals, day by day, by region and on the map. Then download the results.</p>
+            </div>
+          </div>
+        </div>
+        <form class="rg-form" id="rg-form">
+          <label>From <input type="date" id="rg-start" required></label>
+          <label>To <input type="date" id="rg-end" required></label>
+          <label>Sensor
+            <select id="rg-sensor">
+              <option value="auto">Auto (VIIRS from Feb 2012)</option>
+              <option value="VIIRS">VIIRS</option>
+              <option value="MODIS">MODIS</option>
+              <option value="both">Both sensors</option>
+            </select>
+          </label>
+          <button type="submit" class="rg-go">Show fires</button>
+          <div class="rg-quick" role="group" aria-label="Quick ranges">
+            <span>Quick:</span>
+            <button type="button" data-quick="day">Single day</button>
+            <button type="button" data-quick="week">7 days</button>
+            <button type="button" data-quick="month">Selected month</button>
+            <button type="button" data-quick="last30">Last 30 days of data</button>
+          </div>
+        </form>
+        <p class="note rg-avail" id="rg-avail"></p>
+        <p class="status" id="rg-status" role="status"></p>
+        <div id="rg-results" hidden>
+          <div class="tiles inner rg-tiles" id="rg-tiles"></div>
+          <div class="rg-grid">
+            <div class="rg-panel">
+              <h3 class="mini-h">Detections per day</h3>
+              <div class="chart-box short"><canvas id="rg-chart" aria-label="Fire detections per day" role="img"></canvas></div>
+            </div>
+            <div class="rg-panel">
+              <h3 class="mini-h">By region</h3>
+              <ol class="rg-regions" id="rg-regions"></ol>
+            </div>
+          </div>
+          <h3 class="mini-h">Where the fires were <small class="note" id="rg-map-note"></small></h3>
+          <div id="rg-map" class="map rg-map"></div>
+          <div class="scale" id="rg-legend"></div>
+          <details class="table-view">
+            <summary>Show the strongest 100 detections as a table</summary>
+            <div class="table-wrap"><table class="data" id="rg-table"></table></div>
+          </details>
+          <div class="dl-bar rg-dl" aria-label="Downloads">
+            <span class="dl-h">Download</span>
+            <a class="dl-btn dl-main" id="rg-dl-points" href="#" download><span aria-hidden="true">⬇</span> Fire points (CSV)<small id="rg-dl-count"></small></a>
+            <button type="button" class="dl-btn" data-dl="rg-csv"><span aria-hidden="true">⬇</span> Analysis results (CSV)</button>
+            <button type="button" class="dl-btn" data-dl="rg-png"><span aria-hidden="true">⬇</span> Chart (PNG)</button>
+          </div>
+        </div>
       </section>
       </div>
     </section>
@@ -1011,9 +1088,9 @@
     </div>
   </template>
 
-  <script src="app.js?v=ui-20261115x" defer></script>
-  <script src="consultant.js?v=ui-20261115x" defer></script>
-  <script src="timeline-fx.js?v=ui-20261115x" defer></script>
-  <script src="state-map.js?v=ui-20261115x" defer></script>
+  <script src="app.js?v=ui-20261115z" defer></script>
+  <script src="consultant.js?v=ui-20261115z" defer></script>
+  <script src="timeline-fx.js?v=ui-20261115z" defer></script>
+  <script src="state-map.js?v=ui-20261115z" defer></script>
 </body>
 </html>

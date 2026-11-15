@@ -115,6 +115,86 @@ def calibration_points(region: str) -> dict:
     return {"calibration": row, "points": pts}
 
 
+# ---------- specific date range (Dashboard "Specific dates") ----------
+VIIRS_FROM = 20120201          # VIIRS S-NPP data start (yyyymmdd)
+
+
+_dkeys: dict[int, np.ndarray] = {}
+
+
+def _date_keys(df: pd.DataFrame) -> np.ndarray:
+    """yyyymmdd as int32, computed once per loaded table (keyed by the table object)."""
+    key = _dkeys.get(id(df))
+    if key is None or len(key) != len(df):
+        key = (df["year"].astype("int32") * 10000 + df["month"].astype("int32") * 100
+               + df["day"].astype("int32")).to_numpy()
+        _dkeys.clear()
+        _dkeys[id(df)] = key
+    return key
+
+
+def hotspot_dates() -> dict:
+    k = _date_keys(clean_hotspots())
+    lo, hi = int(k.min()), int(k.max())
+    fmt = lambda v: f"{v // 10000:04d}-{v // 100 % 100:02d}-{v % 100:02d}"
+    return {"first": fmt(lo), "last": fmt(hi), "viirs_from": fmt(VIIRS_FROM)}
+
+
+def _range_rows(scope: str, start: int, end: int, sensor: str) -> tuple[pd.DataFrame, str]:
+    """Hotspots between two yyyymmdd keys (inclusive) for an area and sensor."""
+    if sensor == "auto":
+        sensor = "VIIRS" if start >= VIIRS_FROM else "MODIS"
+    df = clean_hotspots()
+    k = _date_keys(df)
+    m = (k >= start) & (k <= end) & df["region"].isin(scope_regions(scope)).to_numpy()
+    if sensor != "both":
+        m &= (df["sensor"] == sensor).to_numpy()
+    sub = df.loc[m, ["year", "month", "day", "lat", "lon", "frp", "sensor", "region"]].copy()
+    sub["date"] = pd.to_datetime(dict(year=sub["year"], month=sub["month"], day=sub["day"])).dt.strftime("%Y-%m-%d")
+    return sub, sensor
+
+
+def hotspot_range(scope: str, start: int, end: int, sensor: str, max_points: int = 15000) -> dict:
+    sub, sensor = _range_rows(scope, start, end, sensor)
+    n_days = (pd.Timestamp(str(end)) - pd.Timestamp(str(start))).days + 1
+    base = {"scope": scope, "sensor": sensor, "days_in_range": n_days}
+    if sub.empty:
+        return {**base, "hotspots": 0, "fire_days": 0, "cell_days": 0, "frp_total": 0,
+                "busiest_day": None, "daily": [], "regions": [], "points": [], "points_truncated": False}
+    # fire cell-days on the 0.05° grid, same unit as the rest of the site
+    cells = (np.floor(sub["lat"] / 0.05).astype(int).astype(str) + "_"
+             + np.floor(sub["lon"] / 0.05).astype(int).astype(str) + "_" + sub["date"])
+    daily = (sub.groupby("date").agg(hotspots=("frp", "size"), frp=("frp", "sum")).reset_index())
+    daily["frp"] = daily["frp"].astype("float64").round(1)
+    busiest = daily.loc[daily["hotspots"].idxmax()]
+    reg = (sub.groupby("region", observed=True)
+              .agg(hotspots=("frp", "size"), frp=("frp", "sum"), fire_days=("date", "nunique")).reset_index()
+              .sort_values("hotspots", ascending=False))
+    peak_day = sub.groupby(["region", "date"], observed=True).size().reset_index(name="n")
+    peak_day = peak_day.loc[peak_day.groupby("region", observed=True)["n"].idxmax()].set_index("region")["date"]
+    total = len(sub)
+    regions = [{"region": str(r.region), "hotspots": int(r.hotspots), "share": round(r.hotspots / total * 100, 1),
+                "frp": round(float(r.frp), 1), "fire_days": int(r.fire_days),
+                "peak_date": str(peak_day.get(r.region, ""))} for r in reg.itertuples(index=False)]
+    # map points: strongest fires first, capped so the page stays fast
+    pts = sub.sort_values("frp", ascending=False)
+    truncated = len(pts) > max_points
+    pts = pts.head(max_points)
+    points = [[round(float(a), 4), round(float(b), 4), round(float(c), 1), d, str(e)]
+              for a, b, c, d, e in zip(pts["lat"], pts["lon"], pts["frp"], pts["date"], pts["region"])]
+    return {**base, "hotspots": total, "fire_days": int(daily.shape[0]), "cell_days": int(cells.nunique()),
+            "frp_total": round(float(sub["frp"].sum()), 1),
+            "busiest_day": {"date": busiest["date"], "hotspots": int(busiest["hotspots"])},
+            "daily": daily.to_dict(orient="records"), "regions": regions,
+            "points": points, "points_truncated": truncated}
+
+
+def hotspot_range_csv(scope: str, start: int, end: int, sensor: str) -> str:
+    sub, _ = _range_rows(scope, start, end, sensor)
+    out = sub[["date", "lat", "lon", "frp", "sensor", "region"]].sort_values(["date", "region"])
+    return out.to_csv(index=False, float_format="%.4f")
+
+
 def hotspot_grid(scope: str, year: int, month: int, sensor: str, cell: float) -> dict:
     if sensor == "auto":
         sensor = "VIIRS" if (year, month) >= (2012, 2) else "MODIS"

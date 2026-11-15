@@ -1375,6 +1375,222 @@ function whereEvents() {
   });
 }
 
+/* ---------- Dashboard: specific dates ----------
+   /api/hotspots/range gives totals, day-by-day counts, regions and the strongest
+   15,000 detections for the map; /api/hotspots/range.csv downloads all of them. */
+let rgMap = null, rgLayer = null, rgChart = null, rgData = null, rgReq = 0, rgDates = null;
+const pad2 = (n) => String(n).padStart(2, "0");
+const isoDate = (y, m, d) => `${y}-${pad2(m)}-${pad2(d)}`;
+const lastDayOf = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+const addDays = (iso, n) => { const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const dayLabel = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+const fmtDay = (iso) => dayLabel.format(new Date(iso + "T00:00:00Z"));
+const scopeSlug = () => state.scope.replace(/[^A-Za-z0-9]+/g, "_");
+
+function rgClamp(iso) {
+  if (!rgDates) return iso;
+  return iso < rgDates.first ? rgDates.first : iso > rgDates.last ? rgDates.last : iso;
+}
+function rgSet(start, end) {
+  start = rgClamp(start); end = rgClamp(end);
+  if (start > end) [start, end] = [end, start];
+  $("#rg-start").value = start;
+  $("#rg-end").value = end;
+}
+function rgMonth(y, m) { rgSet(isoDate(y, m, 1), isoDate(y, m, lastDayOf(y, m))); }
+const rgQuery = () => new URLSearchParams({ scope: state.scope, start: $("#rg-start").value, end: $("#rg-end").value, sensor: $("#rg-sensor").value });
+
+async function initRange() {
+  if (rgDates) return;
+  try { rgDates = await getJSON("/hotspots/dates"); }
+  catch { rgDates = { first: "2003-01-01", last: "2025-12-31", viirs_from: "2012-02-01" }; }
+  for (const id of ["#rg-start", "#rg-end"]) { $(id).min = rgDates.first; $(id).max = rgDates.last; }
+  if (!$("#rg-start").value) rgMonth(state.year, state.month);
+  $("#rg-avail").textContent = `Fire detections are available from ${fmtDay(rgDates.first)} to ${fmtDay(rgDates.last)}. ` +
+    `VIIRS (finer, 375 m) is used from ${fmtDay(rgDates.viirs_from)}; MODIS before that.`;
+  $("#rg-form").addEventListener("submit", (e) => { e.preventDefault(); rgSet($("#rg-start").value, $("#rg-end").value); loadRange(); });
+  $("#rg-form").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-quick]");
+    if (!b) return;
+    const s = $("#rg-start").value || isoDate(state.year, state.month, 1);
+    if (b.dataset.quick === "day") rgSet(s, s);
+    else if (b.dataset.quick === "week") rgSet(s, addDays(s, 6));
+    else if (b.dataset.quick === "month") rgMonth(state.year, state.month);
+    else if (b.dataset.quick === "last30") rgSet(addDays(rgDates.last, -29), rgDates.last);
+    loadRange();
+  });
+}
+
+function renderRange() {
+  initRange().then(() => {
+    if (rgMap) rgMap.invalidateSize({ pan: false });
+    loadRange();
+  });
+}
+
+async function loadRange() {
+  const start = $("#rg-start").value, end = $("#rg-end").value;
+  if (!start || !end) return;
+  const req = ++rgReq, q = rgQuery();
+  const st = $("#rg-status");
+  st.classList.remove("err");
+  st.textContent = "Loading fire detections…";
+  let d;
+  try { d = await getJSON("/hotspots/range?" + q); }
+  catch (e) {
+    if (req !== rgReq) return;
+    st.textContent = "Could not load fire detections: " + e.message; st.classList.add("err"); return;
+  }
+  if (req !== rgReq) return;
+  rgData = { ...d, start, end };
+  const span = start === end ? fmtDay(start) : `${fmtDay(start)} – ${fmtDay(end)}`;
+  st.textContent = d.hotspots ? "" : `No fire detections in ${state.scope === "All" ? "the monitored regions" : state.scope} for ${span} (${d.sensor}).`;
+  $("#rg-results").hidden = !d.hotspots;
+  if (!d.hotspots) return;
+
+  // tiles
+  const top = d.regions[0];
+  const tiles = [
+    { k: `Fire detections · ${span}`, v: nf.format(d.hotspots), d: `${d.sensor} · ${d.fire_days} of ${d.days_in_range} days had fire` },
+    { k: "Fire cell-days", v: nf.format(d.cell_days), d: "5 km patches burning on a day, the site's standard unit" },
+    { k: "Busiest day", v: fmtDay(d.busiest_day.date), d: `${nf.format(d.busiest_day.hotspots)} detections that day` },
+    { k: "Most fires in", v: top.region, d: `${top.share}% of detections · peak ${fmtDay(top.peak_date)}` },
+  ];
+  $("#rg-tiles").innerHTML = tiles.map((t) =>
+    `<div class="tile"><div class="k">${esc(t.k)}</div><div class="v">${esc(t.v)}</div><div class="d">${esc(t.d)}</div></div>`).join("");
+
+  // regions
+  $("#rg-regions").innerHTML = d.regions.map((r) => `<li>
+      <span class="rg-r-name"><b>${esc(r.region)}</b><small>${nf.format(r.hotspots)} detections · ${r.fire_days} fire days · peak ${esc(fmtDay(r.peak_date))}</small></span>
+      <span class="rg-r-share">${r.share}%</span>
+      <span class="rg-r-bar" aria-hidden="true"><i style="width:${Math.max(1, r.share)}%"></i></span></li>`).join("");
+
+  // day-by-day chart, with empty days filled in so gaps show
+  const t = tokens();
+  const byDay = new Map(d.daily.map((x) => [x.date, x.hotspots]));
+  let labels = d.daily.map((x) => x.date);
+  if (d.days_in_range <= 800) { labels = []; for (let x = start; x <= end; x = addDays(x, 1)) labels.push(x); }
+  const values = labels.map((x) => byDay.get(x) || 0);
+  rgChart?.destroy();
+  rgChart = new Chart($("#rg-chart"), {
+    type: "bar",
+    data: { labels, datasets: [{ label: "Fire detections", data: values,
+      backgroundColor: labels.map((x) => (x === d.busiest_day.date ? t.fire[3] : t.fire[1])),
+      borderRadius: { topLeft: 3, topRight: 3 }, borderSkipped: "start", categoryPercentage: 0.9, barPercentage: 0.95 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+      plugins: { legend: { display: false }, tooltip: { ...chartTooltip(t),
+        callbacks: { title: (it) => fmtDay(labels[it[0].dataIndex]), label: (it) => `${nf.format(it.raw)} fire detections` } } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: t.muted, maxTicksLimit: 8, maxRotation: 0,
+          callback: (v, i) => (labels.length > 366 ? labels[i].slice(0, 7) : fmtDay(labels[i]).replace(/ \d{4}$/, "")) } },
+        y: { beginAtZero: true, grid: { color: t.grid }, ticks: { color: t.muted, callback: (v) => compact(v) },
+          title: { display: true, text: "Detections per day", color: t.muted } },
+      },
+    },
+  });
+
+  // map of the detections, coloured by fire intensity (FRP)
+  if (!rgMap) {
+    rgMap = L.map("rg-map", { preferCanvas: true, minZoom: 3, maxZoom: 12, zoomSnap: 0.25 });
+    addLightBasemap(rgMap);
+  }
+  rgMap.invalidateSize({ pan: false });
+  rgLayer?.remove();
+  const col = ramp(t.fire), renderer = L.canvas({ padding: 0.3 });
+  rgLayer = L.layerGroup(d.points.map(([lat, lon, frp, day, region]) => L.circleMarker([lat, lon], {
+    renderer, radius: frp >= 100 ? 4.5 : frp >= 20 ? 3.5 : 2.6, weight: 0,
+    fillColor: col(Math.log10(frp + 1) / Math.log10(500)), fillOpacity: 0.85,
+  }).bindTooltip(`<b>${esc(fmtDay(day))}</b><br>${esc(region)} · ${lat.toFixed(3)}, ${lon.toFixed(3)}<br>Fire radiative power ${frp} MW`)))
+    .addTo(rgMap);
+  const lats = d.points.map((p) => p[0]), lons = d.points.map((p) => p[1]);
+  rgMap.fitBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], { padding: [20, 20], maxZoom: 9 });
+  $("#rg-map-note").textContent = d.points_truncated
+    ? `· showing the ${nf.format(d.points.length)} strongest of ${nf.format(d.hotspots)} detections (the CSV has all of them)`
+    : `· all ${nf.format(d.hotspots)} detections`;
+  $("#rg-legend").innerHTML = `<span>Weaker fire</span><span class="bar" style="background:${gradient(t.fire)}"></span><span>Stronger fire (fire radiative power, MW)</span>`;
+
+  // strongest 100 as a table
+  $("#rg-table").innerHTML = `<thead><tr><th>Date</th><th>Region</th><th class="num">Latitude</th><th class="num">Longitude</th><th class="num">FRP (MW)</th></tr></thead><tbody>` +
+    d.points.slice(0, 100).map(([lat, lon, frp, day, region]) =>
+      `<tr><td>${esc(day)}</td><td>${esc(region)}</td><td class="num">${lat.toFixed(4)}</td><td class="num">${lon.toFixed(4)}</td><td class="num">${frp}</td></tr>`).join("") + "</tbody>";
+
+  // full CSV straight from the server
+  const a = $("#rg-dl-points");
+  a.href = API + "/hotspots/range.csv?" + q;
+  a.download = `fire_points_${scopeSlug()}_${start}_to_${end}.csv`;
+  $("#rg-dl-count").textContent = ` · ${nf.format(d.hotspots)} rows`;
+}
+
+/* ---------- downloads: CSV tables and chart images ---------- */
+const csvCell = (v) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+const toCSV = (rows) => rows.map((r) => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
+function saveFile(name, data, type) {
+  const blob = data instanceof Blob ? data : new Blob(["﻿" + data], { type });   // BOM so Excel reads UTF-8
+  const url = URL.createObjectURL(blob), a = document.createElement("a");
+  a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+function saveChart(canvas, name, title) {
+  if (!canvas) return;
+  const pad = 24, head = title ? 34 : 0, out = document.createElement("canvas");
+  out.width = canvas.width + pad * 2; out.height = canvas.height + pad * 2 + head;
+  const g = out.getContext("2d"), t = tokens();
+  g.fillStyle = "#ffffff"; g.fillRect(0, 0, out.width, out.height);
+  if (title) { g.fillStyle = t.ink; g.font = `600 ${Math.round(16 * (window.devicePixelRatio || 1))}px "Instrument Sans", sans-serif`; g.fillText(title, pad, pad + 16); }
+  g.drawImage(canvas, pad, pad + head);
+  out.toBlob((b) => saveFile(name, b), "image/png");
+}
+const areaName = () => (state.scope === "All" ? "All regions" : state.scope);
+
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-dl]");
+  if (!b) return;
+  const kind = b.dataset.dl, slug = scopeSlug();
+  if (kind === "series-csv") {
+    saveFile(`monthly_fire_activity_${slug}.csv`, toCSV([
+      ["area", "year", "month", "fire_cell_days_viirs_scale", "modis_cell_days", "viirs_cell_days", "source", "median_same_month", "times_typical"],
+      ...state.series.map((d) => [areaName(), d.year, d.month, d.harmonized, d.modis, d.viirs, d.source, d.median, d.anomaly])]), "text/csv");
+  } else if (kind === "hist-csv") {
+    const m = +$("#h-month").value;
+    saveFile(`${MONTHS_LONG[m - 1]}_every_year_${slug}.csv`, toCSV([
+      ["area", "month", "year", "fire_cell_days", "median_2003_2025", "times_typical", "source"],
+      ...state.series.filter((d) => d.month === m).map((d) => [areaName(), MONTHS_LONG[m - 1], d.year, d.harmonized, d.median, d.anomaly, d.source])]), "text/csv");
+  } else if (kind === "ts-png") {
+    saveChart($("#ts"), `monthly_fire_activity_${slug}.png`, `Monthly fire activity · ${areaName()}`);
+  } else if (kind === "hist-png") {
+    const m = +$("#h-month").value;
+    saveChart($("#hist"), `${MONTHS_LONG[m - 1]}_every_year_${slug}.png`, `${MONTHS_LONG[m - 1]} in every year · ${areaName()}`);
+  } else if (kind === "rg-png" && rgData) {
+    saveChart($("#rg-chart"), `fire_detections_per_day_${slug}_${rgData.start}_to_${rgData.end}.png`,
+      `Fire detections per day · ${areaName()} · ${fmtDay(rgData.start)} – ${fmtDay(rgData.end)}`);
+  } else if (kind === "rg-csv" && rgData) {
+    const d = rgData;
+    saveFile(`fire_analysis_${slug}_${d.start}_to_${d.end}.csv`, toCSV([
+      ["Fire analysis", areaName(), `${d.start} to ${d.end}`, `sensor ${d.sensor}`],
+      [],
+      ["Summary", "value"],
+      ["Fire detections", d.hotspots], ["Fire cell-days", d.cell_days], ["Days in range", d.days_in_range],
+      ["Days with fire", d.fire_days], ["Total fire radiative power (MW)", d.frp_total],
+      ["Busiest day", d.busiest_day.date], ["Detections on busiest day", d.busiest_day.hotspots],
+      [],
+      ["By region", "detections", "share_percent", "fire_days", "peak_date", "total_frp_mw"],
+      ...d.regions.map((r) => [r.region, r.hotspots, r.share, r.fire_days, r.peak_date, r.frp]),
+      [],
+      ["Day by day", "detections", "total_frp_mw"],
+      ...d.daily.map((x) => [x.date, x.hotspots, x.frp]),
+    ]), "text/csv");
+  } else if (kind === "month-points") {
+    const q = new URLSearchParams({ scope: state.scope, start: isoDate(state.year, state.month, 1),
+      end: isoDate(state.year, state.month, lastDayOf(state.year, state.month)), sensor: $("#f-sensor").value });
+    const a = document.createElement("a");
+    a.href = API + "/hotspots/range.csv?" + q; a.download = `fire_points_${slug}_${state.year}-${pad2(state.month)}.csv`;
+    document.body.append(a); a.click(); a.remove();
+  } else if (kind === "month-range") {
+    initRange().then(() => { rgMonth(state.year, state.month); location.hash = "/dashboard?section=range"; });
+  }
+});
+
 /* ---------- fire watch overview ---------- */
 const ensoFor = (year) =>
   (state.oni?.available && state.oni.latest_year >= year ? "observed" : "0");
@@ -1388,7 +1604,7 @@ function loadOverview() {
   const observed = state.series.at(-1);
   if (!observed) return;
   const outlook = firstForecastPeriod(observed);
-  import("./overview.js?v=ui-20261115x").then(({ renderOverview }) => {
+  import("./overview.js?v=ui-20261115z").then(({ renderOverview }) => {
     if (route.page === "home") {
       renderOverview({ observed, outlook, getJSON, scope: state.scope, openExplorer(year, month) {
         setYM(year, month);
@@ -1411,7 +1627,7 @@ function loadExplorerWatchlist() {
   const outlook = forecast
     ? { year: picked.year, month: picked.month, enso: ensoFor(picked.year) }
     : firstForecastPeriod(latest);
-  import("./overview.js?v=ui-20261115x").then(({ renderExplorerWatchlist }) => {
+  import("./overview.js?v=ui-20261115z").then(({ renderExplorerWatchlist }) => {
     if (route.page !== "explorer") return;
     renderExplorerWatchlist({
       outlook, layer: forecast ? "forecast" : "observed",
@@ -1440,7 +1656,7 @@ const pages = {
   docs: "Docs",
 };
 const sections = {
-  dashboard: ["calendar", "hotspots", "history"],
+  dashboard: ["calendar", "hotspots", "history", "range"],
   data: ["sources", "methods", "calibration"],
   docs: ["catalogue", "climate", "skill", "files", "reproduce"],
 };
@@ -1483,7 +1699,7 @@ function updateRoute(moveFocus = false) {
   const slot = view.querySelector("[data-filters]");
   filters.hidden = !slot;
   if (slot && filters.parentElement !== slot) slot.append(filters);
-  const observed = page === "dashboard" && section !== "history";
+  const observed = page === "dashboard" && (section === "calendar" || section === "hotspots");
   const forecast = page === "forecast" || page === "haze";
   filters.querySelector("[data-timeline-filter]").hidden = page !== "explorer";
   filters.querySelectorAll("[data-observed-filter]").forEach((label) => { label.hidden = !observed; });
@@ -1528,6 +1744,8 @@ function renderView() {
         renderTS();
       } else if (route.section === "history") {
         renderHist();
+      } else if (route.section === "range") {
+        renderRange();
       } else {
         if (!map) initMap();
         map.invalidateSize({ pan: false });
