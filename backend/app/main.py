@@ -14,7 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import CLEAN_DIR, CORS_ORIGINS, DATA_DIR, FRONTEND_DIR
-from app.routers import consult, datasets, fires, harmonized, predict, stats, world, world_fires
+from app.routers import (consult, datasets, fires, global_, harmonized, news, predict, stats,
+                         world, world_fires)
 from app.services import forecast as forecast_svc
 from app.services import harmonized as harmonized_svc
 from app.services import spatial_forecast as spatial_svc
@@ -64,6 +65,8 @@ app.include_router(harmonized.router)
 app.include_router(consult.router)
 app.include_router(world.router)
 app.include_router(world_fires.router)
+app.include_router(global_.router)
+app.include_router(news.router)
 
 
 @app.get("/api/health", tags=["health"])

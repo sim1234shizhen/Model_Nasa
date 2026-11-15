@@ -764,6 +764,12 @@
           <nav class="section-nav doc-side-nav" aria-label="Rebuild">
             <a href="#/docs?section=reproduce">Reproduce</a>
           </nav>
+          <p class="doc-side-label">About</p>
+          <nav class="section-nav doc-side-nav" aria-label="About">
+            <a href="#/docs?section=references">References</a>
+            <a href="#/docs?section=ai">Use of AI</a>
+            <a href="#/docs?section=future">Future work</a>
+          </nav>
         </aside>
 
         <div class="doc-main">
@@ -1038,14 +1044,38 @@
           <div data-section="limits" hidden>
             <h3 id="limits-what">Limits</h3>
             <p class="doc-note">What the record cannot tell you, in one place.</p>
+
+            <h4 id="limits-harmonization">Harmonization</h4>
             <ul class="doc-list">
-              <li><strong>A region-month is uncertain.</strong> The calibration error is a median of 18.4%, and the worst region is 29.8%. The error is a median, so individual months can be worse.</li>
-              <li><strong>Before 2012 is modelled, not observed.</strong> MODIS counts are converted onto the VIIRS scale with a fit validated on the 2012–2025 overlap. A converted value is an estimate with the error above, not a measurement.</li>
-              <li><strong>The calibration is regional.</strong> The coefficients are fitted per region and apply to VIIRS S-NPP. They do not transfer to a different VIIRS satellite or to the world record's NOAA-20 counts.</li>
-              <li><strong>Cell-days count hot pixels, not area or smoke.</strong> A fire cell-day says a 0.05° cell had at least one detection that day. It is not burned hectares, fire intensity or air quality.</li>
-              <li><strong>Cloud and smoke hide fires.</strong> Every sensor misses fires under thick cloud or smoke; the record counts what was seen, not everything that burned.</li>
-              <li><strong>The forecast's 80% range is optimistic.</strong> On held-out Jun–Nov months it contained the outcome 68% of the time, not 80%. Trust the expected value and the relative ranking more than the edges of the range.</li>
-              <li><strong>The forecast is a statistical outlook, not a warning.</strong> It covers ten regions in Malaysia and Indonesia, gives typical monthly activity and relative risk, and is not an official alert.</li>
+              <li><strong>Harmonized as cell-days, not hotspots.</strong> MODIS and VIIRS are put on one scale at the level of monthly fire cell-days (0.05° cells, one count per cell per day), not individual detections. Fire intensity (FRP) is not harmonized.</li>
+              <li><strong>One fit per region, all year.</strong> The MODIS → VIIRS calibration is one model per region, fitted on the overlap period (Feb 2012–2025). It does not vary by season or land cover.</li>
+              <li><strong>A region-month is uncertain.</strong> Leave-one-year-out error is a median of 18.4% per region-month, from 10.5% (Kalimantan) to 29.8% (Java). It is a median, so individual months can be worse. Regions with few fires have less reliable calibration.</li>
+              <li><strong>Before Feb 2012 is modelled, not observed.</strong> Those months are MODIS counts converted to the VIIRS scale, so they carry the calibration error above. A converted value is an estimate, not a measurement.</li>
+              <li><strong>The calibration is tied to one satellite.</strong> The coefficients apply to VIIRS S-NPP. They do not transfer to a different VIIRS satellite or to the world record's NOAA-20 counts.</li>
+              <li><strong>Ageing satellites.</strong> Terra and Aqua are near the end of their lives and their orbits are drifting, which may lower recent MODIS detections and affect the fitted ratio.</li>
+              <li><strong>S-NPP has ended.</strong> VIIRS S-NPP data delivery ended in November 2026. Future updates need a re-calibration against VIIRS NOAA-20/NOAA-21.</li>
+            </ul>
+
+            <h4 id="limits-data">Data</h4>
+            <ul class="doc-list">
+              <li><strong>Cell-days count hot pixels, not area or smoke.</strong> Active-fire hotspots show where and when burning was detected. A fire cell-day says a 0.05° cell had at least one detection that day. It is not burned hectares, smoke or air quality at any location.</li>
+              <li><strong>Satellites miss fires.</strong> Fires under thick cloud or smoke, small or short-lived fires, and fires between overpasses are not seen. The record counts what was seen, not everything that burned.</li>
+              <li><strong>Filtered detections.</strong> Low-confidence detections and non-vegetation heat sources (FIRMS type ≠ 0: volcanoes, gas flares, offshore) are removed.</li>
+              <li><strong>The record starts in 2003,</strong> the first full year with both Terra and Aqua.</li>
+            </ul>
+
+            <h4 id="limits-forecast">Forecast</h4>
+            <ul class="doc-list">
+              <li><strong>A statistical outlook, not a warning.</strong> The outlook is a statistical model (seasonal pattern + El Niño index, with drought code in some regions). It is not a physical fire or weather model, and it is not an official alert.</li>
+              <li><strong>The 80% range is optimistic.</strong> Backtest error is about ±42% per month (2013–2025), and on held-out Jun–Nov months the 80% range contained the outcome 68% of the time. The range is more meaningful than the single number.</li>
+              <li><strong>Accuracy is slightly flattered.</strong> The model input for each region was chosen after seeing the backtest, which makes the reported accuracy slightly optimistic.</li>
+              <li><strong>What the model cannot see.</strong> It does not use rainfall forecasts, wind, fire policy or land-use change.</li>
+              <li><strong>Coarser outside Malaysia and Indonesia.</strong> Country-level estimates elsewhere use a 1° grid and are less reliable than the ten-region forecast.</li>
+            </ul>
+
+            <h4 id="limits-guidance">Guidance</h4>
+            <ul class="doc-list">
+              <li><strong>Not medical advice.</strong> The haze preparedness advice is general information. Follow official air-quality agencies for current conditions.</li>
             </ul>
             <p class="doc-note">The world record reports country totals by sensor. Explorer also shows historical fire activity on a separate 1° global grid. <a href="#/docs?section=world">Read them with the world record</a>.</p>
           </div>
@@ -1207,6 +1237,63 @@
             </ol>
             <p class="doc-note">All four scripts sit in the project root and use the backend virtual environment.</p>
           </div>
+
+          <div data-section="references" hidden>
+            <h3 id="ref-nasa">NASA data</h3>
+            <ul class="doc-list">
+              <li><a href="https://firms.modaps.eosdis.nasa.gov/">NASA FIRMS</a> – MODIS Collection 6.1 Active Fire product (MCD14ML), Terra and Aqua, 1 km.</li>
+              <li><a href="https://firms.modaps.eosdis.nasa.gov/">NASA FIRMS</a> – VIIRS S-NPP 375 m Active Fire product (VNP14IMGT).</li>
+              <li><a href="https://firms.modaps.eosdis.nasa.gov/">NASA FIRMS</a> – VIIRS NOAA-20 375 m Active Fire product (VJ114IMGT), used in the world fire record.</li>
+              <li><a href="https://data.giss.nasa.gov/impacts/gfwed/">NASA GISS – Global Fire Weather Database (GFWED)</a>: fire weather index and drought code.</li>
+              <li><a href="https://power.larc.nasa.gov/">NASA POWER</a> – monthly meteorological data, used in the rainfall and predictor tests.</li>
+              <li><a href="https://www.earthdata.nasa.gov/engage/open-data-services-software/earthdata-developer-portal/gibs-api">NASA GIBS</a> – Blue Marble imagery.</li>
+            </ul>
+
+            <h3 id="ref-other">Other data</h3>
+            <ul class="doc-list">
+              <li><a href="https://www.cpc.ncep.noaa.gov/">NOAA Climate Prediction Center</a> – Oceanic Niño Index (ONI).</li>
+              <li><a href="https://stateoftheocean.osmc.noaa.gov/sur/ind/dmi.php">NOAA / BoM</a> – Indian Ocean Dipole Mode Index (DMI), used in the predictor tests.</li>
+              <li><a href="https://www.naturalearthdata.com/">Natural Earth</a> – country and state boundaries.</li>
+              <li><a href="https://www.geonames.org/">GeoNames</a> – city names and positions for the place search (CC BY 4.0).</li>
+              <li><a href="https://flagpedia.net/">Flagpedia (flagcdn.com)</a> – national flag images.</li>
+              <li>News headlines – <a href="https://news.google.com/">Google News</a> RSS search feed, plus links to <a href="https://asmc.asean.org/">ASMC</a> and the Indonesia Ministry of Forestry.</li>
+            </ul>
+
+            <h3 id="ref-imagery">Map imagery</h3>
+            <ul class="doc-list">
+              <li>Esri World Imagery, World Light Gray Canvas and World Boundaries and Places (Esri, Maxar, Earthstar Geographics).</li>
+              <li>© OpenStreetMap contributors.</li>
+              <li>AWS Terrain Tiles (Mapzen Terrarium).</li>
+            </ul>
+
+            <h3 id="ref-software">Software</h3>
+            <ul class="doc-list">
+              <li><strong>Back end and data:</strong> Python, FastAPI, Uvicorn, pandas, NumPy, PyArrow, Pydantic, LangChain.</li>
+              <li><strong>Front end:</strong> <a href="https://leafletjs.com/">Leaflet</a> 1.9.4, <a href="https://maplibre.org/">MapLibre GL JS</a> 5.24.1, <a href="https://www.chartjs.org/">Chart.js</a> 4.4.1.</li>
+              <li><strong>Fonts:</strong> DM Sans, Instrument Sans and IBM Plex Mono, from Google Fonts. Icons and the Ziro mascot are hand-written SVG in this project.</li>
+            </ul>
+
+            <h3 id="ref-ack">Acknowledgement</h3>
+            <p class="doc-note">We acknowledge the use of data from NASA's Fire Information for Resource Management System (FIRMS), part of NASA's Earth Science Data and Information System (ESDIS).</p>
+          </div>
+
+          <div data-section="ai" hidden>
+            <h3 id="ai-use">Use of artificial intelligence</h3>
+            <ul class="doc-list">
+              <li><strong>Development.</strong> Claude (Anthropic) was used to help write and debug data-cleaning, gridding and calibration scripts, to review the website, and to draft documentation text.</li>
+              <li><strong>Ziro, the in-app assistant,</strong> is a LangChain tool-calling agent running on Ollama Cloud (GLM model). It answers by calling tools that read the site's own data — the fire record, calibration, forecasts and world record — rather than from general knowledge, and it is told to keep model estimates separate from confirmed detections.</li>
+              <li><strong>Human review.</strong> All AI-assisted code and text were reviewed and tested by the team. The data, calibration results and validation numbers come from our own runs on NASA FIRMS data.</li>
+            </ul>
+          </div>
+
+          <div data-section="future" hidden>
+            <h3 id="future-work">Future work</h3>
+            <ul class="doc-list">
+              <li>Re-calibrate against VIIRS NOAA-20/NOAA-21 so the calendar keeps updating after S-NPP.</li>
+              <li>Season-specific calibration, and harmonization of fire intensity (FRP).</li>
+              <li>User-drawn areas of interest, and peat-fire persistence indicators for haze risk.</li>
+            </ul>
+          </div>
         </div>
 
         <nav class="doc-toc" aria-label="On this page">
@@ -1330,7 +1417,7 @@
     </div>
   </template>
 
-  <script src="app.js?v=world-dashboard" defer></script>
+  <script src="app.js?v=docs-about2" defer></script>
   <script src="consultant.js?v=world-cell-forecast" defer></script>
   <script src="timeline-fx.js?v=ui-20261116b" defer></script>
   <script src="state-map.js?v=ui-20261116b" defer></script>

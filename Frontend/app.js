@@ -1614,7 +1614,7 @@ function loadOverview() {
   const observed = state.series.at(-1);
   if (!observed) return;
   const outlook = firstForecastPeriod(observed);
-  import("./overview.js?v=world-cell-forecast").then(({ renderOverview }) => {
+  import("./overview.js?v=countup-fix").then(({ renderOverview }) => {
     if (route.page === "home") {
       renderOverview({ observed, outlook, getJSON, scope: state.scope, regions: state.regions, openExplorer(year, month) {
         setCursor(ym({ year, month }));
@@ -1637,7 +1637,7 @@ function loadExplorerWatchlist() {
   const outlook = forecast
     ? { year: picked.year, month: picked.month, enso: ensoFor(picked.year) }
     : firstForecastPeriod(latest);
-  import("./overview.js?v=world-cell-forecast").then(({ renderExplorerWatchlist }) => {
+  import("./overview.js?v=countup-fix").then(({ renderExplorerWatchlist }) => {
     if (route.page !== "explorer") return;
     renderExplorerWatchlist({
       outlook, layer: forecast ? "forecast" : "observed",
@@ -1662,7 +1662,7 @@ const pages = {
 const sections = {
   dashboard: ["calendar", "hotspots", "history"],
   data: ["sources", "methods", "calibration", "world"],
-  docs: ["key", "catalogue", "climate", "world", "skill", "limits", "files", "reproduce"],
+  docs: ["key", "catalogue", "climate", "world", "skill", "limits", "files", "reproduce", "references", "ai", "future"],
 };
 let route = { page: "home" };
 let ready = false;

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>UPWIND Space Apps Deck</title>
+<title>BurningView · Space Apps Deck</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -160,6 +160,7 @@ svg text{font-family:var(--mono)}
 }
 @media (prefers-reduced-motion:reduce){.slide,.slide.on{transition:none}}
 </style>
+<style>.ai-mark{position:fixed;right:14px;bottom:10px;z-index:9999;font:500 10px/1 "IBM Plex Mono",monospace;letter-spacing:.04em;color:rgba(255,255,255,.55);background:rgba(0,0,0,.28);padding:4px 7px;border-radius:4px;pointer-events:none}</style>
 </head>
 <body>
 <div id="stage"></div>
@@ -169,7 +170,7 @@ svg text{font-family:var(--mono)}
 <div id="loading">LOADING NASA IMAGERY · TERRAIN · FIRMS HOTSPOTS</div>
 
 <header class="top">
-  <div class="brand"><i></i><b>UPWIND</b></div>
+  <div class="brand"><i></i><b>BurningView</b></div>
   <div class="readouts">
     <div class="ro"><small>AREA OF INTEREST</small><span>SUMATRA + KALIMANTAN → MALAYSIA</span></div>
     <div class="ro"><small>VIEW CENTRE</small><span id="ro-center">1.50°N 106.50°E</span></div>
@@ -187,7 +188,7 @@ svg text{font-family:var(--mono)}
 <section class="slide" data-title="Mission">
   <div class="panel L">
     <div class="eyebrow">NASA Space Apps Challenge 2026<br>Harmonization of MODIS and VIIRS Hot Spots</div>
-    <h1>UPWIND</h1>
+    <h1>BurningView</h1>
     <div class="sub">A harmonized burning-activity calendar for the fires behind Malaysia's haze.</div>
     <div class="ph">Team · Houston—we have a problem</div>
     <ul class="members">
@@ -266,7 +267,7 @@ svg text{font-family:var(--mono)}
       <li><div><b>Ingest</b>NASA FIRMS standard-processing archives: MODIS C6.1 (2000–2025) and VIIRS S-NPP 375 m (2012–2025). The harmonized record starts in 2003, the first full year of Aqua.</div></li>
       <li><div><b>Clean</b>Keep vegetation fires (type 0). Drop duplicates, MODIS confidence below 30 and VIIRS low confidence. Use local-time dates.</div></li>
       <li><div><b>Grid</b>Count fire cell-days on a 0.05° grid: a cell that burns on a given day counts once, however many pixels detect it.</div></li>
-      <li><div><b>Calibrate</b>For each of five regions, fit a linear and a power-law model from MODIS to the VIIRS scale on the overlap months, Feb 2012 to 2025.</div></li>
+      <li><div><b>Calibrate</b>For each of 10 regions across Malaysia and Indonesia, fit a linear and a power-law model from MODIS to the VIIRS scale on the overlap months, Feb 2012 to 2025. The five haze-source and haze-receiving regions are shown.</div></li>
       <li><div><b>Validate</b>Leave one year out, refit, predict that year. Keep the model with the lower error.</div></li>
     </ol>
   </div>
@@ -322,7 +323,7 @@ svg text{font-family:var(--mono)}
     <div class="q">Is this season's burning unusual? A consistent 23-year baseline can answer that.</div>
     <p>ASMC's monthly haze reviews compare hotspot counts with the previous five years, from one VIIRS satellite. Our harmonized record reaches back to 2003.</p>
     <span class="src">ASMC Review of Regional Haze Situation, August 2025</span>
-    <p style="margin-top:12px">The web app also gives a 2026–2027 outlook from the recent seasonal pattern and the El Niño index. Backtested on 2013–2025, its typical monthly error is ±38%.</p>
+    <p style="margin-top:12px">The web app also gives a 2026–2027 outlook (El Niño + NASA GFWED drought code). Issued in May and scored on June–November, its typical monthly error is 42% (50% for the seasonal pattern alone). Its ~28 km risk map scores AUC 0.81: the riskiest 10% of cells held 36% of fire days.</p>
   </div>
   <div class="panel R">
     <div class="ph">Users</div>
@@ -345,6 +346,7 @@ svg text{font-family:var(--mono)}
           <li>NASA FIRMS: MODIS Collection 6.1 active fire, VIIRS S-NPP 375 m active fire (standard processing), country yearly archives</li>
           <li>NASA GIBS: Blue Marble Next Generation; Blue Marble Shaded Relief and Bathymetry</li>
           <li>Terrain: AWS Terrain Tiles (Mapzen Terrarium, SRTM-derived). River lines are flow paths computed from this terrain, not surveyed rivers</li>
+          <li>NASA GISS GFWED fire-weather drought code, for the outlook</li>
           <li>NOAA CPC Oceanic Niño Index, for the outlook</li>
           <li>Boundaries: Natural Earth</li>
           <li>Context: ASMC, Bernama, Malaysiakini</li>
@@ -358,14 +360,14 @@ svg text{font-family:var(--mono)}
           <li>A hotspot is a hot pixel at overpass time, not one fire</li>
           <li>Cloud and forest canopy hide some fires</li>
           <li>Not a haze forecast: wind and rain are not modelled</li>
-          <li>Values before Feb 2012 are calibrated MODIS estimates, with 10% to 21% typical error</li>
-          <li>Outlook backtests use the observed El Niño index, which is not known in advance, so real forecast errors would be larger</li>
+          <li>Values before Feb 2012 are calibrated MODIS estimates, with 10% to 30% typical error by region</li>
+          <li>The outlook is a probability from history and climate drivers, not a certainty; picking each region&#8217;s best driver after the backtest flatters it slightly</li>
           <li>Region boxes are approximate</li>
         </ul>
         <h4>Next steps</h4>
         <ul class="list">
           <li>Add 2026 near-real-time data from the FIRMS API</li>
-          <li>Add NOAA-20 and NOAA-21 VIIRS</li>
+          <li>Add NOAA-20 and NOAA-21 VIIRS to the regional calibration</li>
           <li>Overlay wind and Malaysian air-quality records</li>
         </ul>
       </div>
@@ -896,5 +898,6 @@ function loop(){
 })();
 })();
 </script>
+<div class="ai-mark" aria-label="AI-assisted content">AI-assisted · Claude (Anthropic)</div>
 </body>
 </html>

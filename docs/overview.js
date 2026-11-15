@@ -61,7 +61,11 @@ export function renderOverview({ observed, outlook, getJSON, scope, regions, ope
   el("overview-watch-date").textContent = dateLabel(outlook);
   el("overview-chip-obs").textContent = dateLabel(observed);
   el("overview-chip-fc").textContent = dateLabel(outlook);
-  for (const id of ["detected", "repeat", "area-count", "watch-count"]) el("overview-" + id).textContent = "–";
+  for (const id of ["detected", "repeat", "area-count", "watch-count"]) {
+    const node = el("overview-" + id);
+    delete node.dataset.count;  // cancel any count-up still running from the last render
+    node.textContent = "–";
+  }
   const observedStatus = el("overview-observed-status"), forecastStatus = el("overview-watch-status");
   const openMap = el("overview-open-map");
   openMap.disabled = true;
@@ -148,9 +152,11 @@ const escapeHTML = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "
 // Numbers tick up to their value once, so the tiles feel alive on arrival.
 function countUp(node, value) {
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (reduce || value < 10) { node.textContent = number.format(value); return; }
-  const start = performance.now(), ms = 700;
   const token = (node.dataset.count = String(Math.random()));
+  const final = () => { if (node.dataset.count === token) node.textContent = number.format(value); };
+  if (reduce || value < 10 || document.hidden) { final(); return; }
+  const start = performance.now(), ms = 700;
+  node.textContent = "0";
   const step = (now) => {
     if (node.dataset.count !== token) return;
     const t = Math.min(1, (now - start) / ms);
@@ -158,6 +164,9 @@ function countUp(node, value) {
     if (t < 1) requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
+  // Browsers pause animation frames in background tabs and some previews;
+  // make sure the real number always lands, animated or not.
+  setTimeout(final, ms + 150);
 }
 
 // Same three bands as the Explorer legend: light 1–2 days, moderate 3–7, heavy 8+.

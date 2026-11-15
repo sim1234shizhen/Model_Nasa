@@ -138,12 +138,19 @@
     setTimeout(() => URL.revokeObjectURL(url), 10000);
   }, true);
 
+  const gslug = (s) => String(s).replace(/[^A-Za-z0-9]+/g, "_");   // country names -> safe file names
+  const period = (p) => `${p.get("year")}-${String(+(p.get("month") || 0)).padStart(2, "0")}`;
   async function answer(path, p) {
     if (path === "hotspots/dates") {
       const idx = await file("hotspots/index.json");
       return idx && { first: idx.first, last: idx.last, viirs_from: idx.viirs_from };
     }
     if (path === "hotspots/range") return hotspotRange(p);
+    // World page (export_static.py writes data/global/...)
+    if (path === "global/summary") return file("global/summary.json");
+    if (path === "global/series") return file(`global/series/${gslug(p.get("country") || "World")}.json`);
+    if (path === "global/ranking") return file(`global/ranking/${period(p)}.json`);
+    if (path === "global/map") return file(`global/map/${period(p)}.json`);
     if (path === "regions" || path === "calibration" || path === "enso" || path === "status") return file(path + ".json");
     if (path === "harmonized") {
       const scope = p.get("scope") || "All";
