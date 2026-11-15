@@ -1,15 +1,19 @@
-"""AI environmental consultant.
+"""AI environmental consultant — LangChain agent over this project's own data.
 
 A tool-calling agent that answers haze / fire-risk questions using THIS project's
-own numbers. It never guesses a figure: every number it quotes comes back from one
-of the tools below, which call the same services the website's charts use.
+numbers. It never guesses a figure: every number it quotes comes back from one of
+the tools below, which call the same services the website's charts use.
 
-Backend: Ollama Cloud (OpenAI-compatible, https://ollama.com/v1), model from
-OLLAMA_MODEL (default glm-5.3-flash). The key is read from OLLAMA_API_KEY, or from
-backend/.env. Cloud models do not support structured outputs, so grounding is done
-with tool calls, not a response schema.
+Stack
+    LangChain  create_agent (tool-calling loop) + @tool
+    Model      Ollama Cloud via ChatOllama, base_url https://ollama.com,
+               API key sent as a Bearer header. Model from OLLAMA_MODEL
+               (default glm-5.3-flash). Key from OLLAMA_API_KEY or backend/.env.
 
-Streams Server-Sent Events so the panel can show tool activity while it works:
+Cloud models do not support structured outputs, so grounding is done with tool
+calls, not a response schema.
+
+Streams Server-Sent Events so the panel can show lookups while it works:
     event: tool    {"name": ..., "args": {...}}      a lookup started
     event: delta   {"text": "..."}                   a piece of the answer
     event: done    {"ok": true}
@@ -19,23 +23,23 @@ from __future__ import annotations
 
 import json
 import os
-import urllib.error
-import urllib.request
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, AsyncIterator, Optional
 
 import numpy as np
 import pandas as pd
+from langchain.agents import create_agent
+from langchain_core.tools import tool
+from langchain_ollama import ChatOllama
 
 from app.config import REGIONS
 from app.services import forecast as F
 from app.services import harmonized as H
 from app.services import spatial_forecast as S
 
-BASE_URL = os.getenv("OLLAMA_BASE_URL", "https://ollama.com/v1").rstrip("/")
+BASE_URL = os.getenv("OLLAMA_BASE_URL", "https://ollama.com")
 MODEL = os.getenv("OLLAMA_MODEL", "glm-5.3-flash")
-MAX_ROUNDS = 5
-TIMEOUT = 120
+RECURSION_LIMIT = 12          # create_agent counts each model + tool step
 MONTHS = ["January", "February", "March", "April", "May", "June",
           "July", "August", "September", "October", "November", "December"]
 
@@ -55,43 +59,62 @@ def _api_key() -> str | None:
 
 
 def configured() -> dict:
-    return {"configured": bool(_api_key()), "model": MODEL, "base_url": BASE_URL}
+    return {"configured": bool(_api_key()), "model": MODEL, "base_url": BASE_URL,
+            "framework": "langchain"}
 
 
-# ---------------------------------------------------------------- tools
+# ---------------------------------------------------------------- data access
 def _clean(o: Any) -> Any:
     """numpy/pandas -> plain JSON types."""
     if isinstance(o, dict):
         return {k: _clean(v) for k, v in o.items()}
     if isinstance(o, (list, tuple)):
         return [_clean(v) for v in o]
-    if isinstance(o, (np.integer,)):
+    if isinstance(o, np.integer):
         return int(o)
-    if isinstance(o, (np.floating,)):
+    if isinstance(o, np.floating):
         return None if np.isnan(o) else round(float(o), 3)
     if isinstance(o, float):
         return None if pd.isna(o) else round(o, 3)
-    if isinstance(o, (np.bool_,)):
+    if isinstance(o, np.bool_):
         return bool(o)
     return o
 
 
-def t_list_regions() -> dict:
+def _next_year() -> int:
+    return int(H.harmonized()["year"].max()) + 1
+
+
+_SCOPES = "All, Malaysia, Indonesia, or one region: Peninsular Malaysia, Sarawak, Sabah, Sumatra, Kalimantan"
+
+
+@tool(parse_docstring=False)
+def list_regions() -> dict:
+    """List the regions this project covers and the scope names the other tools accept."""
     return {"regions": [{"region": r, "country": v["country"]} for r, v in REGIONS.items()],
             "scopes_accepted": ["All", "Malaysia", "Indonesia", *REGIONS]}
 
 
-def t_get_enso() -> dict:
+@tool(parse_docstring=False)
+def get_enso() -> dict:
+    """Latest NOAA El Nino index (ONI) and whether conditions are El Nino, La Nina or neutral."""
     info = F.oni_info()
     info["meaning"] = ("ONI >= +0.5 is El Nino (drier, more fire in the Jun-Nov dry season); "
                        "<= -0.5 is La Nina (wetter); in between is neutral.")
     return _clean(info)
 
 
-def t_get_forecast(scope: str = "All", year: int | None = None, enso: str = "observed") -> dict:
-    h = H.harmonized()
-    last = int(h["year"].max())
-    year = int(year or last + 1)
+@tool(parse_docstring=False)
+def get_forecast(scope: str = "All", year: Optional[int] = None, enso: str = "observed") -> dict:
+    """Month-by-month fire forecast for an area: expected fire cell-days, the 80% range,
+    how it compares with a typical year, and the chance of an above-normal month.
+    Use this for "how bad will it be" questions.
+
+    scope: one of {scopes}.
+    year: forecast year; defaults to the first year after the data ends.
+    enso: 'observed' (default) or a scenario ONI such as '2', '1', '0', '-1'.
+    """
+    year = int(year or _next_year())
     f = F.forecast(scope, year, enso)
     bt = f["backtest"]["chosen"]
     return _clean({
@@ -113,7 +136,14 @@ def t_get_forecast(scope: str = "All", year: int | None = None, enso: str = "obs
     })
 
 
-def t_get_history(scope: str = "All", year: int | None = None, month: int | None = None) -> dict:
+@tool(parse_docstring=False)
+def get_history(scope: str = "All", year: Optional[int] = None, month: Optional[int] = None) -> dict:
+    """Observed fire history from the harmonized MODIS + VIIRS record, 2003 onwards.
+    No year: annual totals and the worst years. Year only: that year month by month.
+    Year and month: that month against the long-run median, with its rank.
+
+    scope: one of {scopes}.  month: 1-12.
+    """
     rows = H.monthly_series(scope)
     if year and month:
         hit = next((r for r in rows if r["year"] == year and r["month"] == month), None)
@@ -128,7 +158,8 @@ def t_get_history(scope: str = "All", year: int | None = None, month: int | None
                        "data_source": hit["source"]})
     if year:
         yr = [r for r in rows if r["year"] == year]
-        return _clean({"scope": scope, "year": year, "total": round(sum(r["harmonized"] for r in yr), 1),
+        return _clean({"scope": scope, "year": year,
+                       "total": round(sum(r["harmonized"] for r in yr), 1),
                        "months": [{"month": r["month"], "name": MONTHS[r["month"] - 1],
                                    "fire_cell_days": r["harmonized"], "ratio_to_median": r["anomaly"]}
                                   for r in yr]})
@@ -137,100 +168,76 @@ def t_get_history(scope: str = "All", year: int | None = None, month: int | None
         tot[r["year"]] = tot.get(r["year"], 0) + r["harmonized"]
     ranked = sorted(tot.items(), key=lambda kv: -kv[1])
     med = float(np.median(list(tot.values())))
-    return _clean({"scope": scope, "unit": "fire cell-days per year",
-                   "median_year": round(med, 1),
+    return _clean({"scope": scope, "unit": "fire cell-days per year", "median_year": round(med, 1),
                    "annual_totals": [{"year": y, "total": round(v, 1)} for y, v in sorted(tot.items())],
                    "worst_years": [{"year": y, "total": round(v, 1), "times_typical": round(v / med, 2)}
                                    for y, v in ranked[:5]]})
 
 
-def t_get_risk_map(scope: str = "All", year: int | None = None, month: int | None = None) -> dict:
+@tool(parse_docstring=False)
+def get_risk_map(scope: str = "All", year: Optional[int] = None, month: Optional[int] = None) -> dict:
+    """Which specific areas (provinces, states, divisions) are most at risk, with expected
+    fire days per area. Use this for "where" questions. It also returns how well the area
+    ranking itself was validated (AUC, concentration, Brier) - use this, not get_accuracy,
+    when asked how good the map, the ranking or the "where" prediction is.
+
+    scope: one of {scopes}.  month: 1-12, omit for all twelve months.
+    """
     try:
-        h = H.harmonized()
-        year = int(year or int(h["year"].max()) + 1)
+        year = int(year or _next_year())
         fm = S.forecast_map(scope, year, "observed")
     except FileNotFoundError as e:
-        return {"error": "The place-by-place risk map is unavailable on this server "
-                         f"because the cleaned hotspot file has not been built ({e}). "
-                         "Answer from the regional forecast and history instead, and say so."}
+        return {"error": "The place-by-place risk map is unavailable on this server because "
+                         f"the cleaned hotspot file has not been built ({e}). Answer from the "
+                         "regional forecast and history instead, and say so."}
     except Exception as e:
         return {"error": f"risk map unavailable: {e}"}
     months = fm["months"] if not month else [m for m in fm["months"] if m["month"] == month]
+    sk = fm["skill"]
     return _clean({
         "scope": fm["scope"], "year": fm["year"], "cell_size_deg": fm["cell_deg"],
-        "skill": fm["skill"],
+        # spelled out, so the answer describes these correctly rather than paraphrasing a bare number
+        "skill": {
+            "backtest_years": sk["test_years"],
+            "ranking_auc": sk["auc"],
+            "ranking_auc_means": (f"Given one cell that burned and one that did not, the model ranks "
+                                  f"the right one higher {sk['auc'] * 100:.0f}% of the time. 50% is guessing."),
+            "concentration_means": (f"The 10% of cells it rated riskiest contained "
+                                    f"{sk['top10_capture_pct']}% of all the fire days that actually happened."),
+            "brier": sk["brier"],
+            "brier_if_same_chance_everywhere": sk["base_rate_brier"],
+            "brier_means": "Lower is better, so the model's probabilities beat a flat guess.",
+        },
         "months": [{"month": m["month"], "name": MONTHS[m["month"] - 1],
                     "expected_fire_days_total": m["expected_fire_days"],
                     "top_areas": m["top_areas"][:6]} for m in months],
     })
 
 
-def t_get_accuracy(region: str | None = None) -> dict:
+@tool(parse_docstring=False)
+def get_accuracy(region: Optional[str] = None) -> dict:
+    """How accurate the HISTORICAL RECORD is: how well MODIS 2003-2011 was rescaled onto the
+    VIIRS scale, per region, with its validated error. Use only when asked whether the past
+    data or the MODIS/VIIRS harmonization can be trusted.
+
+    This says nothing about forecast skill. For how good a forecast is use get_forecast, and
+    for how good the area ranking is use get_risk_map."""
     c = H.calibration()
     if region:
         c = c[c["region"] == region]
     return _clean({
-        "what_this_is": ("How well MODIS was rescaled onto the VIIRS scale, so 2003-2011 "
-                         "can be compared with 2012 onward. Validated leave-one-year-out."),
+        "what_this_is": ("How well MODIS was rescaled onto the VIIRS scale, so 2003-2011 can be "
+                         "compared with 2012 onward. Validated leave-one-year-out."),
         "per_region": c.to_dict(orient="records"),
     })
 
 
-TOOLS: dict[str, Any] = {
-    "list_regions": t_list_regions,
-    "get_enso": t_get_enso,
-    "get_forecast": t_get_forecast,
-    "get_history": t_get_history,
-    "get_risk_map": t_get_risk_map,
-    "get_accuracy": t_get_accuracy,
-}
+TOOLS = [list_regions, get_enso, get_forecast, get_history, get_risk_map, get_accuracy]
+for _t in TOOLS:  # fill the {scopes} placeholder once, so each schema lists the real names
+    _t.description = _t.description.replace("{scopes}", _SCOPES)
 
-_SCOPE = {"type": "string",
-          "description": "All, Malaysia, Indonesia, or one region: Peninsular Malaysia, "
-                         "Sarawak, Sabah, Sumatra, Kalimantan."}
 
-TOOL_SPECS = [
-    {"type": "function", "function": {
-        "name": "list_regions", "description": "The regions this project covers.",
-        "parameters": {"type": "object", "properties": {}}}},
-    {"type": "function", "function": {
-        "name": "get_enso",
-        "description": "Latest NOAA El Nino index (ONI) and whether conditions are El Nino, La Nina or neutral.",
-        "parameters": {"type": "object", "properties": {}}}},
-    {"type": "function", "function": {
-        "name": "get_forecast",
-        "description": "Month-by-month fire forecast for a region: expected fire cell-days, "
-                       "80% range, how it compares with a typical year, and the chance of an "
-                       "above-normal month. Use for 'how bad will it be' questions.",
-        "parameters": {"type": "object", "properties": {
-            "scope": _SCOPE,
-            "year": {"type": "integer", "description": "Forecast year. Defaults to the next year after the data."},
-            "enso": {"type": "string", "description": "'observed' (default), or a scenario ONI like '2', '1', '0', '-1'."}}}}},
-    {"type": "function", "function": {
-        "name": "get_history",
-        "description": "Observed fire history. No year: annual totals and the worst years. "
-                       "Year only: that year month by month. Year and month: that month "
-                       "against the long-run median, with its rank.",
-        "parameters": {"type": "object", "properties": {
-            "scope": _SCOPE,
-            "year": {"type": "integer"},
-            "month": {"type": "integer", "description": "1-12"}}}}},
-    {"type": "function", "function": {
-        "name": "get_risk_map",
-        "description": "Which specific areas (provinces, states, divisions) are most at risk, "
-                       "with expected fire days. Use for 'where' questions.",
-        "parameters": {"type": "object", "properties": {
-            "scope": _SCOPE, "year": {"type": "integer"},
-            "month": {"type": "integer", "description": "1-12. Omit for all twelve months."}}}}},
-    {"type": "function", "function": {
-        "name": "get_accuracy",
-        "description": "How the MODIS-to-VIIRS calibration was validated and its error per region. "
-                       "Use when asked how reliable or trustworthy the data is.",
-        "parameters": {"type": "object", "properties": {
-            "region": {"type": "string"}}}}},
-]
-
-SYSTEM = """You are the Fire Calendar consultant: a practical environmental adviser on \
+SYSTEM = """You are Ziro, BuriningView's AI adviser on \
 vegetation fire and haze in Malaysia and Indonesia (Peninsular Malaysia, Sarawak, Sabah, \
 Sumatra, Kalimantan). You are part of a NASA Space Apps 2026 project built on NASA FIRMS \
 MODIS and VIIRS hotspot detections harmonized into one consistent record, 2003-2025, plus \
@@ -272,57 +279,35 @@ Keep replies under about 200 words unless asked for detail. Markdown is fine: sh
 paragraphs, bold for the key number, bullets only for genuine lists."""
 
 
-# ---------------------------------------------------------------- Ollama
-def _post(payload: dict, key: str):
-    req = urllib.request.Request(
-        f"{BASE_URL}/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json",
-                 "Accept": "text/event-stream", "User-Agent": "fire-calendar-consultant/1.0"},
-        method="POST")
-    return urllib.request.urlopen(req, timeout=TIMEOUT)
+# ---------------------------------------------------------------- agent
+_agent_cache: dict[str, Any] = {}
+
+
+def _agent(key: str, system: str):
+    """Build (and cache per system prompt) the LangChain tool-calling agent."""
+    hit = _agent_cache.get(system)
+    if hit:
+        return hit
+    llm = ChatOllama(
+        model=MODEL,
+        base_url=BASE_URL,
+        temperature=0.3,
+        reasoning=False,           # keep <think> out of the answer stream
+        client_kwargs={"headers": {"Authorization": f"Bearer {key}"}},
+    )
+    agent = create_agent(model=llm, tools=TOOLS, system_prompt=system)
+    if len(_agent_cache) > 8:
+        _agent_cache.clear()
+    _agent_cache[system] = agent
+    return agent
 
 
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-def _stream_round(messages: list[dict], key: str) -> Iterator[tuple[str, Any]]:
-    """One model turn. Yields ('delta', text) as it arrives, then ('calls', [...]) or ('end', None)."""
-    payload = {"model": MODEL, "messages": messages, "tools": TOOL_SPECS,
-               "stream": True, "temperature": 0.3}
-    calls: dict[int, dict] = {}
-    with _post(payload, key) as resp:
-        for raw in resp:
-            line = raw.decode("utf-8", "replace").strip()
-            if not line.startswith("data:"):
-                continue
-            body = line[5:].strip()
-            if body == "[DONE]":
-                break
-            try:
-                chunk = json.loads(body)
-            except json.JSONDecodeError:
-                continue
-            choices = chunk.get("choices") or [{}]
-            delta = choices[0].get("delta") or {}
-            if delta.get("content"):
-                yield "delta", delta["content"]
-            for tc in delta.get("tool_calls") or []:
-                i = tc.get("index", 0)
-                slot = calls.setdefault(i, {"id": "", "name": "", "args": ""})
-                if tc.get("id"):
-                    slot["id"] = tc["id"]
-                fn = tc.get("function") or {}
-                if fn.get("name"):
-                    slot["name"] = fn["name"]
-                if fn.get("arguments"):
-                    slot["args"] += fn["arguments"]
-    yield ("calls", [calls[i] for i in sorted(calls)]) if calls else ("end", None)
-
-
-def run(messages: list[dict], context: dict | None = None) -> Iterator[str]:
-    """Agent loop as a Server-Sent Event stream."""
+async def run(messages: list[dict], context: dict | None = None) -> AsyncIterator[str]:
+    """Run the agent and stream Server-Sent Events."""
     key = _api_key()
     if not key:
         yield _sse("error", {"message": "No Ollama API key. Put OLLAMA_API_KEY=... in "
@@ -335,41 +320,29 @@ def run(messages: list[dict], context: dict | None = None) -> Iterator[str]:
         if bits:
             system += ("\n\nThe user is currently looking at this part of the site - use it to "
                        "read vague questions like 'is this bad?' - " + "; ".join(bits))
-    convo: list[dict] = [{"role": "system", "content": system}, *messages]
 
     try:
-        for _ in range(MAX_ROUNDS):
-            text, calls = "", None
-            for kind, value in _stream_round(convo, key):
-                if kind == "delta":
-                    text += value
-                    yield _sse("delta", {"text": value})
-                elif kind == "calls":
-                    calls = value
-            if not calls:
-                yield _sse("done", {"ok": True})
-                return
-            convo.append({"role": "assistant", "content": text or None,
-                          "tool_calls": [{"id": c["id"] or f"call_{i}", "type": "function",
-                                          "function": {"name": c["name"], "arguments": c["args"] or "{}"}}
-                                         for i, c in enumerate(calls)]})
-            for i, c in enumerate(calls):
-                name = c["name"]
-                try:
-                    args = json.loads(c["args"] or "{}")
-                except json.JSONDecodeError:
-                    args = {}
-                yield _sse("tool", {"name": name, "args": args})
-                fn = TOOLS.get(name)
-                try:
-                    result = fn(**args) if fn else {"error": f"unknown tool {name}"}
-                except Exception as e:
-                    result = {"error": f"{type(e).__name__}: {e}"}
-                convo.append({"role": "tool", "tool_call_id": c["id"] or f"call_{i}",
-                              "name": name, "content": json.dumps(result, ensure_ascii=False)[:12000]})
-        yield _sse("error", {"message": "Gave up after too many lookups."})
-    except urllib.error.HTTPError as e:
-        detail = e.read().decode("utf-8", "replace")[:400]
-        yield _sse("error", {"message": f"Ollama returned {e.code}. {detail}"})
+        agent = _agent(key, system)
+        sent_any = False
+        async for ev in agent.astream_events(
+            {"messages": messages},
+            config={"recursion_limit": RECURSION_LIMIT},
+            version="v2",
+        ):
+            kind = ev["event"]
+            if kind == "on_tool_start":
+                yield _sse("tool", {"name": ev["name"], "args": ev["data"].get("input") or {}})
+            elif kind == "on_chat_model_stream":
+                chunk = ev["data"].get("chunk")
+                text = getattr(chunk, "text", "") if chunk is not None else ""
+                if not isinstance(text, str):        # older cores expose text() as a method
+                    text = text() if callable(text) else ""
+                if text:
+                    sent_any = True
+                    yield _sse("delta", {"text": text})
+        if not sent_any:
+            yield _sse("error", {"message": "The model returned no answer. Try again."})
+            return
+        yield _sse("done", {"ok": True})
     except Exception as e:
         yield _sse("error", {"message": f"{type(e).__name__}: {e}"})

@@ -32,6 +32,11 @@ REGIONS = {
     "Sabah":               {"country": "Malaysia", "bbox": (115.0, 4.0, 119.5, 7.5)},
     "Sumatra":             {"country": "Indonesia", "bbox": (95.0, -6.0, 106.2, 6.0)},
     "Kalimantan":          {"country": "Indonesia", "bbox": (108.8, -4.3, 119.0, 4.5)},
+    "Java":                {"country": "Indonesia", "bbox": (105.0, -9.0, 115.0, -5.5)},
+    "Nusa Tenggara":       {"country": "Indonesia", "bbox": (114.5, -11.0, 125.0, -8.2)},
+    "Sulawesi":            {"country": "Indonesia", "bbox": (118.5, -6.5, 125.5, 1.8)},
+    "Maluku":              {"country": "Indonesia", "bbox": (125.5, -8.5, 131.0, -1.0)},
+    "Papua":               {"country": "Indonesia", "bbox": (130.5, -9.5, 141.0, 0.5)},
 }
 
 # Frontend origins allowed to call the API (comma separated). "*" = allow all (dev).

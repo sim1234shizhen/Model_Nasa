@@ -3,3 +3,7 @@ uvicorn[standard]>=0.29
 pandas>=2.0
 pyarrow>=14.0
 pydantic>=2.0
+
+# AI environmental consultant: LangChain tool-calling agent on Ollama Cloud
+langchain>=1.0
+langchain-ollama>=1.0

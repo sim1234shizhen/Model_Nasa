@@ -29,19 +29,39 @@ REGIONS = {
         "Sabah":               [(115.0, 4.0, 119.5, 7.5)],
     },
     "Indonesia": {
+        # The two haze islands stay whole, so their long series stay comparable.
+        # They are matched first, so the provinces below only receive land that
+        # these two boxes do not already claim.
         "Sumatra":    [(95.0, -6.0, 106.2, 6.0)],
         "Kalimantan": [(108.8, -4.3, 119.0, 4.5)],
+        # The rest of the archipelago, so the model is not Sumatra-and-a-bit.
+        "Java":          [(105.0, -9.0, 115.0, -5.5)],
+        "Nusa Tenggara": [(114.5, -11.0, 125.0, -8.2)],
+        "Sulawesi":      [(118.5, -6.5, 125.5, 1.8)],
+        "Maluku":        [(125.5, -8.5, 131.0, -1.0)],
+        "Papua":         [(130.5, -9.5, 141.0, 0.5)],
     },
 }
 
 # Local time zone per region, used for the local 'date' (so a night fire isn't
 # split across days). Sumatra = WIB (UTC+7). Kalimantan: West/Central = WIB (+7),
 # South/East/North = WITA (+8); the border is roughly lon 114.5.
-UTC_OFFSET_HOURS = {"Peninsular Malaysia": 8, "Sarawak": 8, "Sabah": 8, "Sumatra": 7}
+UTC_OFFSET_HOURS = {"Peninsular Malaysia": 8, "Sarawak": 8, "Sabah": 8, "Sumatra": 7,
+                    "Java": 7, "Nusa Tenggara": 8, "Sulawesi": 8, "Maluku": 9, "Papua": 9}
 KALIMANTAN_WITA_LON = 114.5
 
 UNIFIED_COLS = ["date", "lat", "lon", "frp", "confidence_level", "daynight",
                 "sensor", "satellite", "country", "region"]
+
+
+# Only the columns the pipeline actually uses. The FIRMS files also carry
+# brightness / scan / track / version / bright_t31 / bright_ti4 / bright_ti5,
+# which are read and then thrown away - skipping them roughly halves peak memory
+# (these archives run to millions of rows).
+USECOLS = ["latitude", "longitude", "acq_date", "acq_time", "satellite",
+           "confidence", "frp", "daynight", "type"]
+DTYPES = {"latitude": "float32", "longitude": "float32", "frp": "float32",
+          "satellite": "category", "daynight": "category"}
 
 
 def load(paths):
@@ -51,7 +71,11 @@ def load(paths):
     parts = []
     for f in files:
         country = f.replace("\\", "/").split("/")[-1].rsplit(".", 1)[0].split("_")[-1]
-        parts.append(pd.read_csv(f, low_memory=False).assign(country=country))
+        header = pd.read_csv(f, nrows=0).columns
+        cols = [c for c in USECOLS if c in header]  # NRT files have no 'type'
+        parts.append(pd.read_csv(f, low_memory=False, usecols=cols,
+                                 dtype={k: v for k, v in DTYPES.items() if k in cols})
+                       .assign(country=country))
         print(f"  {f}  (country = {country})")
     df = pd.concat(parts, ignore_index=True)
     print(f"  loaded {len(df):,} rows from {len(files)} file(s)")

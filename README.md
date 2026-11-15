@@ -1,4 +1,4 @@
-# Fire Calendar: harmonized MODIS + VIIRS fire hotspots for Malaysia & Indonesia
+# BuriningView: harmonized MODIS + VIIRS fire hotspots for Malaysia & Indonesia
 
 NASA Space Apps 2026, Challenge #8. Fire hotspots from NASA FIRMS (MODIS 2000–2025 and VIIRS S-NPP 2012–2025) are cleaned, calibrated onto one consistent scale, and shown on a website. The site includes a burning calendar, a hotspot map, history comparisons, haze-preparedness tips, and a forecast of *how much* and *where* fires are likely in 2026–2027.
 

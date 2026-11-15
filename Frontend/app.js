@@ -1,4 +1,4 @@
-/* Fire Calendar - talks to the FastAPI backend under /api.
+/* BuriningView - talks to the FastAPI backend under /api.
    If you host this page somewhere else, set window.API_BASE = "http://127.0.0.1:8000" before this script. */
 const API = (window.API_BASE || "") + "/api";
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -113,6 +113,23 @@ function buildFilters() {
   const years = [...new Set(state.series.map((d) => d.year))];
   $("#f-year").innerHTML = years.map((y) => `<option>${y}</option>`).join("");
   $("#f-month").innerHTML = MONTHS_LONG.map((m, i) => `<option value="${i + 1}">${m}</option>`).join("");
+  const timeline = $("#f-timeline");
+  const first = state.series[0];
+  const last = state.series.at(-1);
+  if (first && last) {
+    // One track: observed months, then the two forecast years the API allows.
+    state.timelineMin = ym(first);
+    state.observedMax = ym(last);
+    state.timelineMax = (last.year + 2) * 12 + 12;
+    state.cursor ??= state.observedMax;
+    timeline.min = state.timelineMin;
+    timeline.max = state.timelineMax;
+    timeline.disabled = state.timelineMin === state.timelineMax;
+    $("#f-first-year").textContent = first.year;
+    $("#f-last-year").textContent = last.year + 2;
+    paintTimeline();
+  }
+  timeline.addEventListener("input", () => setCursor(timeline.valueAsNumber));
   $("#h-month").innerHTML = MONTHS.map((m, i) => `<option value="${i + 1}">${m}</option>`).join("");
   $("#h-year").innerHTML = $("#f-year").innerHTML;
   $("#h-year").addEventListener("change", (e) => setYM(+e.target.value, state.month));
@@ -127,30 +144,67 @@ function buildFilters() {
   $("#t-raw").addEventListener("change", (e) => { state.raw = e.target.checked; renderTS(); });
   $("#t-log").addEventListener("change", (e) => { state.log = e.target.checked; renderTS(); });
   $("#calib-pick").addEventListener("change", (e) => { state.calibRegion = e.target.value; renderCalib(); });
-  document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => {
+  document.querySelectorAll(".seg button[data-mode]").forEach((b) => b.addEventListener("click", () => {
     state.calMode = b.dataset.mode;
-    document.querySelectorAll(".seg button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    document.querySelectorAll(".seg button[data-mode]").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
     renderCal();
   }));
 }
 function syncFilters() {
   $("#f-year").value = String(state.year);
   $("#f-month").value = String(state.month);
+  syncTimeline();
   $("#h-year").value = String(state.year);
   $("#h-month").value = String(state.month);
+}
+
+/* The timeline cursor is a month index across both eras. Up to the last month of
+   FIRMS data it means "show the detections"; past it, "show the forecast". */
+const cursorDate = (cursor) => ({ year: Math.floor((cursor - 1) / 12), month: (cursor - 1) % 12 + 1 });
+const isForecast = (cursor) => state.observedMax != null && cursor > state.observedMax;
+
+function syncTimeline() {
+  const timeline = $("#f-timeline");
+  const wrap = timeline.closest(".timeline");
+  if (!wrap || state.observedMax == null) return;
+  state.cursor ??= ym(state);
+  const { year, month } = cursorDate(state.cursor);
+  const date = `${MONTHS_LONG[month - 1]} ${year}`;
+  const forecast = isForecast(state.cursor);
+  timeline.value = state.cursor;
+  timeline.setAttribute("aria-valuetext", `${date}, ${forecast ? "forecast" : "satellite detections"}`);
+  $("#f-date-label").textContent = date;
+  $("#f-mode-chip").textContent = forecast ? "Forecast" : "Detections";
+  wrap.dataset.mode = forecast ? "forecast" : "observed";
+}
+
+function paintTimeline() {
+  const track = $("#f-track");
+  if (!track || state.timelineMax == null) return;
+  const span = state.timelineMax - state.timelineMin || 1;
+  const pct = (value) => `${((value - state.timelineMin) / span) * 100}%`;
+  track.style.setProperty("--split", pct(state.observedMax));
+}
+
+function setCursor(value) {
+  state.cursor = value;
+  // Keep year/month inside the observed range so the dashboard views stay valid.
+  const observed = cursorDate(Math.min(value, state.observedMax));
+  setYM(observed.year, observed.month);
+  if (route.page === "explorer") loadExplorerWatchlist();
 }
 
 function setYM(year, month) {
   state.year = year;
   state.month = month;
   syncFilters();
-  if (activeSection("explore", "calendar")) {
+  if (activeSection("dashboard", "calendar")) {
     renderTiles();
     tsChart?.update("none");
     renderCal();
   }
-  if (activeSection("explore", "history")) renderHist();
-  if (activeSection("explore", "hotspots")) loadMap();
+  if (activeSection("dashboard", "history")) renderHist();
+  if (activeSection("dashboard", "hotspots")) loadMap();
 }
 
 let scopeRequest = 0;
@@ -407,7 +461,7 @@ function initMap() {
   fitMap();
   // re-bin when zooming changes the sensible cell size
   map.on("zoomend", () => {
-    if (activeSection("explore", "hotspots") && cellFor(map.getZoom()) !== lastCell) loadMap();
+    if (activeSection("dashboard", "hotspots") && cellFor(map.getZoom()) !== lastCell) loadMap();
   });
 }
 // grid cell (degrees) that stays a few pixels wide at the current zoom
@@ -415,11 +469,13 @@ const cellFor = (z) => (z < 5.5 ? 0.25 : z < 7 ? 0.1 : 0.05);
 let lastCell = null;
 function setBasemap() {
   if (baseLayer) map.removeLayer(baseLayer);
-  // Esri gray canvas basemap - free, no API key
-  baseLayer = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", {
+  baseLayer = addLightBasemap(map);
+}
+function addLightBasemap(target) {
+  return L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", {
     attribution: "Basemap &copy; Esri, HERE, Garmin, &copy; OpenStreetMap contributors",
     maxZoom: 16,
-  }).addTo(map);
+  }).addTo(target);
 }
 function fitMap() {
   if (!map) return;
@@ -827,13 +883,12 @@ const where = { data: null, month: null };
 function initFcMap() {
   fcMap = L.map("fc-map", { preferCanvas: true, minZoom: 4, maxZoom: 11, zoomSnap: 0.25 });
   setFcBasemap();
+  $("#fc-map-reset").addEventListener("click", fitFcMap);
 }
 function setFcBasemap() {
   if (!fcMap) return;
   if (fcBase) fcMap.removeLayer(fcBase);
-  fcBase = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", {
-    attribution: "Basemap &copy; Esri, HERE, Garmin, &copy; OpenStreetMap contributors", maxZoom: 16,
-  }).addTo(fcMap);
+  fcBase = addLightBasemap(fcMap);
 }
 function fitFcMap() {
   const regs = scopeRegionNames();
@@ -855,6 +910,7 @@ async function loadWhere() {
   }
   if (id !== whereReq) return;
   where.data = d;
+  $("#fc-map-reset").disabled = false;
   // default month: the month with most expected fire days
   if (!where.month) where.month = d.months.reduce((a, m) => (m.expected_fire_days > a.expected_fire_days ? m : a), d.months[0]).month;
   $("#where-note").textContent = `Chance of at least one fire day in each ${d.cell_deg}° (~28 km) grid cell, ${d.year} (${d.enso_used}). Pick a month.`;
@@ -885,7 +941,7 @@ function renderWhere() {
       stroke: false, fillColor: r((pct - 5) / 85), fillOpacity: 0.85,
     }).bindTooltip(`<b>${pct}% chance</b> of fire in ${MONTHS_LONG[mi]} ${d.year}<br>${esc(d.areas[ai])} · about ${(fd10 / 10).toFixed(1)} fire days expected<br><span style="opacity:.75">${lat.toFixed(2)}°, ${lon.toFixed(2)}° (cell SW corner)</span>`, { sticky: true })
   )).addTo(fcMap);
-  $("#fc-map-legend").innerHTML = `<span>5%</span><span class="bar" style="background:${gradient(t.fire)}"></span><span>90% chance of ≥1 fire day</span>`;
+  $("#fc-map-legend").innerHTML = `<span>5%</span><span class="bar" style="background:${gradient(t.fire)}"></span><span>90%</span>`;
 
   // top areas
   $("#top-title").textContent = `Top areas in ${MONTHS_LONG[mi]} ${d.year}`;
@@ -940,21 +996,78 @@ function whereEvents() {
   });
 }
 
-/* ---------- boot ---------- */
+/* ---------- fire watch overview ---------- */
+const ensoFor = (year) =>
+  (state.oni?.available && state.oni.latest_year >= year ? "observed" : "0");
+
+function firstForecastPeriod(lastObserved) {
+  const { year, month } = cursorDate(ym(lastObserved) + 1);
+  return { year, month, enso: ensoFor(year) };
+}
+
+function loadOverview() {
+  const observed = state.series.at(-1);
+  if (!observed) return;
+  const outlook = firstForecastPeriod(observed);
+  import("./overview.js?v=satellite-forecast").then(({ renderOverview }) => {
+    if (route.page === "home") {
+      renderOverview({ observed, outlook, getJSON, scope: state.scope, openExplorer(year, month) {
+        setYM(year, month);
+        location.hash = "/explorer";
+      } });
+    }
+  }).catch(() => {
+    $("#overview-observed-status").textContent = "The fire watch summary could not load.";
+    $("#overview-watch-status").textContent = "The forecast summary could not load.";
+  });
+}
+
+function loadExplorerWatchlist() {
+  const latest = state.series.at(-1);
+  if (!latest) return;
+  // The timeline decides the era: past the last observed month it is a forecast
+  // month, otherwise the watchlist keeps showing the nearest forecast period.
+  const forecast = isForecast(state.cursor ?? ym(state));
+  const picked = cursorDate(state.cursor ?? ym(state));
+  const outlook = forecast
+    ? { year: picked.year, month: picked.month, enso: ensoFor(picked.year) }
+    : firstForecastPeriod(latest);
+  import("./overview.js?v=satellite-forecast").then(({ renderExplorerWatchlist }) => {
+    if (route.page !== "explorer") return;
+    renderExplorerWatchlist({
+      outlook, layer: forecast ? "forecast" : "observed",
+      getJSON, regions: state.regions, escape: esc,
+      onPlace(scope) {
+        const control = $("#f-scope");
+        if (control.value === scope) return;
+        control.value = scope;
+        changeScope(scope);
+      },
+      updateTerrain(place, forecast) {
+        terrainModule.then((module) => module?.updateExplorerView?.(place, forecast));
+      },
+    });
+  }).catch(() => { $("#explorer-watch-status").textContent = "The place watchlist could not load."; });
+}
+
+/* ---------- navigation ---------- */
 const pages = {
   home: "Overview",
-  explore: "Fire Explorer",
+  explorer: "Explorer",
+  dashboard: "Fire Dashboard",
   forecast: "Fire Forecast",
   haze: "Haze Preparedness",
   data: "Data & Methods",
+  docs: "Docs",
 };
 const sections = {
-  explore: ["calendar", "hotspots", "history"],
+  dashboard: ["calendar", "hotspots", "history"],
   data: ["sources", "methods", "calibration"],
+  docs: ["catalogue", "climate", "skill", "files", "reproduce"],
 };
 let route = { page: "home" };
 let ready = false;
-let terrainLoading = false;
+let terrainModule;
 
 function activeSection(page, section) {
   return route.page === page && route.section === section;
@@ -963,15 +1076,17 @@ function activeSection(page, section) {
 function updateRoute(moveFocus = false) {
   const [path, query] = location.hash.slice(1).split("?");
   const name = path.startsWith("/") ? path.slice(1) : "";
-  const page = Object.hasOwn(pages, name) ? name : "home";
+  const pageName = name === "explore" ? "dashboard" : name;
+  const page = Object.hasOwn(pages, pageName) ? pageName : "home";
   const options = sections[page] || [];
   const requested = new URLSearchParams(query).get("section");
   const section = options.includes(requested) ? requested : options[0];
   const changedPage = route.page !== page;
   const changedSection = route.section !== section;
   route = { page, section };
-  document.title = page === "home" ? "Fire Calendar · Malaysia & Indonesia" : pages[page] + " · Fire Calendar";
-  document.body.classList.toggle("map-page", page === "home");
+  if (page !== "explorer") $("#place-search-dialog").close();
+  document.title = pages[page] + " · BuriningView";
+  document.body.classList.toggle("map-page", page === "explorer");
 
   document.querySelectorAll("[data-page]").forEach((view) => { view.hidden = view.dataset.page !== page; });
   const view = document.querySelector('[data-page="' + page + '"]');
@@ -989,11 +1104,12 @@ function updateRoute(moveFocus = false) {
   const slot = view.querySelector("[data-filters]");
   filters.hidden = !slot;
   if (slot && filters.parentElement !== slot) slot.append(filters);
-  const observed = page === "home" || (page === "explore" && section !== "history");
+  const observed = page === "dashboard" && section !== "history";
   const forecast = page === "forecast" || page === "haze";
+  filters.querySelector("[data-timeline-filter]").hidden = page !== "explorer";
   filters.querySelectorAll("[data-observed-filter]").forEach((label) => { label.hidden = !observed; });
   filters.querySelectorAll("[data-forecast-filter]").forEach((label) => { label.hidden = !forecast; });
-  $("#status").hidden = page === "data" && section !== "calibration";
+  $("#status").hidden = (page === "data" && section !== "calibration") || page === "docs";
   hideTip();
 
   if (moveFocus && (changedPage || (changedSection && !document.activeElement.closest(".section-nav")))) {
@@ -1003,15 +1119,30 @@ function updateRoute(moveFocus = false) {
   if (ready && (changedPage || changedSection)) renderView();
 }
 
+function renderDocToc() {
+  const box = document.getElementById("doc-toc-links");
+  if (!box) return;
+  const panel = document.querySelector('[data-page="docs"] [data-section]:not([hidden])');
+  const heads = panel ? [...panel.querySelectorAll("h3[id]")] : [];
+  box.replaceChildren(...heads.map((h) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = h.textContent.trim();
+    b.addEventListener("click", () => h.scrollIntoView({ behavior: "smooth", block: "start" }));
+    return b;
+  }));
+}
+
 function renderView() {
   switch (route.page) {
     case "home":
-      if (!terrainLoading) {
-        terrainLoading = true;
-        import("./hero3d.js").catch(() => { $("#hero-when").textContent = "3D view could not load"; });
-      }
+      loadOverview();
       break;
-    case "explore":
+    case "explorer":
+      terrainModule ??= import("./hero3d.js?v=forecast-flames").catch(() => { $("#hero-status").textContent = "3D view could not load"; });
+      loadExplorerWatchlist();
+      break;
+    case "dashboard":
       if (route.section === "calendar") {
         renderTiles();
         renderCal();
@@ -1036,6 +1167,9 @@ function renderView() {
       break;
     case "data":
       if (route.section === "calibration") renderCalib();
+      break;
+    case "docs":
+      renderDocToc();
       break;
   }
 }
@@ -1091,3 +1225,149 @@ $(".skip").addEventListener("click", (event) => {
 window.addEventListener("hashchange", () => updateRoute(true));
 updateRoute();
 boot();
+
+
+/* ---- floating watchlist layer -------------------------------------------
+   Detaches the watchlist from the page grid into its own layer: drag the
+   panel header to move, drag the corner grip to resize. State is kept in
+   localStorage. Docks itself again below 900px wide. */
+(function initFloatingWatchlist() {
+  const sidebar = document.querySelector(".watch-sidebar");
+  const workspace = sidebar && sidebar.closest(".explorer-workspace");
+  const toggle = document.getElementById("watch-float-toggle");
+  if (!sidebar || !workspace || !toggle) return;
+
+  const KEY = "fireExplorer.watchFloat.v1";
+  const MARGIN = 8, MIN_W = 260, MIN_H = 220, NARROW = 900;
+  const state = { on: false, x: null, y: null, w: 340, h: 620 };
+
+  const grip = document.createElement("div");
+  grip.className = "watch-resize-grip";
+  grip.hidden = true;
+  grip.setAttribute("aria-hidden", "true");
+  document.body.appendChild(grip);
+
+  try {
+    const saved = JSON.parse(localStorage.getItem(KEY) || "null");
+    if (saved && typeof saved === "object") Object.assign(state, saved);
+  } catch (err) { /* first run or storage blocked */ }
+
+  const canFloat = () => window.innerWidth > NARROW;
+
+  function clamp() {
+    const maxW = Math.max(MIN_W, window.innerWidth - MARGIN * 2);
+    const maxH = Math.max(MIN_H, window.innerHeight - MARGIN * 2);
+    state.w = Math.min(Math.max(state.w || 340, MIN_W), maxW);
+    state.h = Math.min(Math.max(state.h || 620, MIN_H), maxH);
+    if (state.x == null) state.x = window.innerWidth - state.w - 24;
+    if (state.y == null) state.y = 80;
+    state.x = Math.min(Math.max(state.x, MARGIN), Math.max(MARGIN, window.innerWidth - state.w - MARGIN));
+    state.y = Math.min(Math.max(state.y, MARGIN), Math.max(MARGIN, window.innerHeight - state.h - MARGIN));
+  }
+
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (err) { /* ignore */ }
+  }
+
+  function syncGrip() {
+    /* a position:fixed element has no offsetParent, so test size, not offsetParent */
+    if (!state.on || workspace.hidden) { grip.hidden = true; return; }
+    const r = sidebar.getBoundingClientRect();
+    if (!r.width || !r.height) { grip.hidden = true; return; }
+    grip.hidden = false;
+    grip.style.left = (r.right - 20) + "px";
+    grip.style.top = (r.bottom - 20) + "px";
+  }
+
+  function paint() {
+    if (state.on && canFloat()) {
+      clamp();
+      sidebar.dataset.floating = "true";
+      sidebar.style.left = state.x + "px";
+      sidebar.style.top = state.y + "px";
+      sidebar.style.width = state.w + "px";
+      sidebar.style.height = state.h + "px";
+      workspace.dataset.sidebar = "float";
+    } else {
+      state.on = false;
+      delete sidebar.dataset.floating;
+      sidebar.style.left = sidebar.style.top = sidebar.style.width = sidebar.style.height = "";
+      delete workspace.dataset.sidebar;
+    }
+    toggle.setAttribute("aria-pressed", String(state.on));
+    toggle.title = state.on
+      ? "Dock the panel back into the page"
+      : "Float panel - drag to move, corner to resize";
+    syncGrip();
+  }
+
+  toggle.addEventListener("click", () => {
+    if (!canFloat()) return;
+    state.on = !state.on;
+    paint();
+    save();
+  });
+
+  const head = sidebar.querySelector("section > .watch-panel-head");
+  let drag = null;
+  head.addEventListener("pointerdown", (e) => {
+    if (!state.on || e.button !== 0) return;
+    if (e.target.closest("button, a, input, select, textarea")) return;
+    const r = sidebar.getBoundingClientRect();
+    drag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+    sidebar.classList.add("is-dragging");
+    try { head.setPointerCapture(e.pointerId); } catch (err) { /* pointer already gone */ }
+    e.preventDefault();
+  });
+  head.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    state.x = e.clientX - drag.dx;
+    state.y = e.clientY - drag.dy;
+    clamp();
+    sidebar.style.left = state.x + "px";
+    sidebar.style.top = state.y + "px";
+    syncGrip();
+  });
+  function endDrag(e) {
+    if (!drag) return;
+    drag = null;
+    sidebar.classList.remove("is-dragging");
+    try { head.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    save();
+  }
+  head.addEventListener("pointerup", endDrag);
+  head.addEventListener("pointercancel", endDrag);
+
+  let rz = null;
+  grip.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    const r = sidebar.getBoundingClientRect();
+    rz = { sx: e.clientX, sy: e.clientY, w: r.width, h: r.height };
+    sidebar.classList.add("is-resizing");
+    try { grip.setPointerCapture(e.pointerId); } catch (err) { /* pointer already gone */ }
+    e.preventDefault();
+  });
+  grip.addEventListener("pointermove", (e) => {
+    if (!rz) return;
+    state.w = Math.max(MIN_W, rz.w + (e.clientX - rz.sx));
+    state.h = Math.max(MIN_H, rz.h + (e.clientY - rz.sy));
+    clamp();
+    sidebar.style.width = state.w + "px";
+    sidebar.style.height = state.h + "px";
+    syncGrip();
+  });
+  function endResize(e) {
+    if (!rz) return;
+    rz = null;
+    sidebar.classList.remove("is-resizing");
+    try { grip.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    save();
+  }
+  grip.addEventListener("pointerup", endResize);
+  grip.addEventListener("pointercancel", endResize);
+
+  window.addEventListener("resize", () => { if (state.on) paint(); });
+  new MutationObserver(syncGrip).observe(workspace, { attributes: true, attributeFilter: ["hidden"] });
+
+  paint();
+})();

@@ -1,8 +1,9 @@
 # Raw NASA FIRMS data: already in the repo root via Git LFS (pushed separately)
 Model_Nasa/
 
-# Too large for GitHub (264 MB). Rebuild with Clean.py, see README.
-Clean_dataset/clean_hotspots.csv
+# Keep newly generated datasets local. Rebuild with Clean.py, see README.
+*.csv
+/data/
 
 # Python / tooling
 .venv/

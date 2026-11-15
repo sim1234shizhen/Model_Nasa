@@ -31,7 +31,9 @@ FIRST_FULL_YEAR = 2003   # MODIS Aqua starts mid-2002; 2003 is the first full ye
 LAST_YEAR = 2025
 VIIRS_START = (2012, 2)  # S-NPP archive starts 2012-01-20 -> Jan 2012 is a partial month
 REGION_COUNTRY = {"Peninsular Malaysia": "Malaysia", "Sarawak": "Malaysia", "Sabah": "Malaysia",
-                  "Sumatra": "Indonesia", "Kalimantan": "Indonesia"}
+                  "Sumatra": "Indonesia", "Kalimantan": "Indonesia", "Java": "Indonesia",
+                  "Nusa Tenggara": "Indonesia", "Sulawesi": "Indonesia", "Maluku": "Indonesia",
+                  "Papua": "Indonesia"}
 
 
 def cell_days(df, grid):
