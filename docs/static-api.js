@@ -106,6 +106,8 @@
     try { u = new URL(typeof input === "string" ? input : input.url, document.baseURI); } catch (e) { return real(input, init); }
     const i = u.pathname.indexOf("/api/");
     if (u.origin !== location.origin || i < 0) return real(input, init);
+    // The consultant is a real serverless function (api/consult.js), not a static file.
+    if (/^consult\/?$/.test(u.pathname.slice(i + 5))) return real(input, init);
     const d = await answer(u.pathname.slice(i + 5).replace(/\/$/, ""), u.searchParams);
     return d ? json(d) : json({ detail: "Not available in the static version of this site" }, 404);
   };
