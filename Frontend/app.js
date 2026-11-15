@@ -257,7 +257,10 @@ function buildFilters() {
   scope.addEventListener("change", () => changeScope(scope.value));
   $("#f-year").addEventListener("change", (e) => setYM(+e.target.value, state.month));
   $("#f-month").addEventListener("change", (e) => setYM(state.year, +e.target.value));
-  $("#f-sensor").addEventListener("change", (e) => { state.sensor = e.target.value; loadMap(); });
+  $("#cal-to-map").addEventListener("click", (e) => {   // calendar -> hotspot map for the selected month
+    e.preventDefault();
+    initRange().then(() => { rgMonth(state.year, state.month); location.hash = "/dashboard?section=hotspots"; });
+  });
   $("#t-raw").addEventListener("change", (e) => { state.raw = e.target.checked; renderTS(); });
   $("#t-log").addEventListener("change", (e) => { state.log = e.target.checked; renderTS(); });
   $("#calib-pick").addEventListener("change", (e) => { state.calibRegion = e.target.value; renderCalib(); });
@@ -321,7 +324,6 @@ function setYM(year, month) {
     renderCal();
   }
   if (activeSection("dashboard", "history")) renderHist();
-  if (activeSection("dashboard", "hotspots")) loadMap();
 }
 
 let scopeRequest = 0;
@@ -569,74 +571,13 @@ function calTip(e) {
     `<br><span class="m">${esc(d.source)}</span>`, e.clientX, e.clientY);
 }
 
-/* ---------- map ---------- */
-let map = null, baseLayer = null, cellLayer = null, mapReq = 0;
-
-function initMap() {
-  map = L.map("map", { preferCanvas: true, worldCopyJump: false, minZoom: 4, maxZoom: 11, zoomSnap: 0.25 });
-  setBasemap();
-  fitMap();
-  // re-bin when zooming changes the sensible cell size
-  map.on("zoomend", () => {
-    if (activeSection("dashboard", "hotspots") && cellFor(map.getZoom()) !== lastCell) loadMap();
-  });
-}
-// grid cell (degrees) that stays a few pixels wide at the current zoom
-const cellFor = (z) => (z < 5.5 ? 0.25 : z < 7 ? 0.1 : 0.05);
-let lastCell = null;
-function setBasemap() {
-  if (baseLayer) map.removeLayer(baseLayer);
-  baseLayer = addLightBasemap(map);
-}
+/* ---------- map basemap (hotspot map and forecast map) ---------- */
 function addLightBasemap(target) {
   return L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", {
     attribution: "Basemap &copy; Esri, HERE, Garmin, &copy; OpenStreetMap contributors",
     maxZoom: 16,
   }).addTo(target);
 }
-function fitMap() {
-  if (!map) return;
-  const regs = scopeRegionNames();
-  const boxes = state.regions.filter((r) => regs.includes(r.region)).map((r) => r.bbox);
-  if (!boxes.length) return;
-  const b = [Math.min(...boxes.map((x) => x[1])), Math.min(...boxes.map((x) => x[0])),
-             Math.max(...boxes.map((x) => x[3])), Math.max(...boxes.map((x) => x[2]))];
-  map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: [4, 4] });
-}
-
-async function loadMap() {
-  const id = ++mapReq;
-  const label = `${MONTHS_LONG[state.month - 1]} ${state.year}`;
-  $("#map-title").textContent = `Hotspot map · ${label}`;
-  $("#map-note").textContent = "Loading hotspots… (the first load after a server start can take about a minute)";
-  const cell = cellFor(map ? map.getZoom() : 5);
-  lastCell = cell;
-  const q = new URLSearchParams({ scope: state.scope, year: state.year, month: state.month, sensor: state.sensor, cell });
-  let d;
-  try { d = await getJSON(`/hotspots/grid?${q}`); } catch (e) {
-    if (id === mapReq) $("#map-note").textContent = `Could not load hotspots: ${e.message}`;
-    return;
-  }
-  if (id !== mapReq) return; // a newer request superseded this one
-
-  const t = tokens(), r = ramp(t.fire);
-  const max = Math.max(1, ...d.cells.map((c) => c.cell_days));
-  if (cellLayer) cellLayer.remove();
-  cellLayer = L.layerGroup(d.cells.map((c) =>
-    L.rectangle([[c.lat, c.lon], [c.lat + d.cell, c.lon + d.cell]], {
-      stroke: false, fillColor: r(Math.log1p(c.cell_days) / Math.log1p(max)), fillOpacity: 0.9,
-    }).bindTooltip(`<b>${c.cell_days} fire day${c.cell_days === 1 ? "" : "s"}</b> in this ${d.cell}° cell<br>${nf.format(c.hotspots)} ${d.sensor} hotspots · FRP ${nf.format(c.frp)} MW`, { sticky: true })
-  )).addTo(map);
-
-  const viirsNote = (state.sensor === "VIIRS" && state.year * 12 + state.month < VIIRS_START) ? " VIIRS has no data before Feb 2012; pick MODIS or Auto." : "";
-  $("#map-note").textContent = d.hotspots
-    ? `${nf.format(d.hotspots)} ${d.sensor} hotspots in ${nf.format(d.cells.length)} grid cells (${d.cell}°). Zoom in for finer cells.${viirsNote}`
-    : `No ${d.sensor} hotspots in this area in ${label}.${viirsNote}`;
-  $("#map-legend").innerHTML = d.cells.length
-    ? `<span>1 day</span><span class="bar" style="background:${gradient(t.fire)}"></span><span>${max} days burning per cell this month</span>`
-    : "";
-}
-
 /* ---------- calibration ---------- */
 let scChart = null;
 const predict = (c, m) => (c.model === "linear" ? c.k * m : c.a * Math.pow(m, c.b));
@@ -1415,7 +1356,7 @@ async function initRange() {
     const s = $("#rg-start").value || isoDate(state.year, state.month, 1);
     if (b.dataset.quick === "day") rgSet(s, s);
     else if (b.dataset.quick === "week") rgSet(s, addDays(s, 6));
-    else if (b.dataset.quick === "month") rgMonth(state.year, state.month);
+    else if (b.dataset.quick === "month") rgMonth(+s.slice(0, 4), +s.slice(5, 7));   // the month of the From date
     else if (b.dataset.quick === "last30") rgSet(addDays(rgDates.last, -29), rgDates.last);
     loadRange();
   });
@@ -1451,7 +1392,7 @@ async function loadRange() {
   // tiles
   const top = d.regions[0];
   const tiles = [
-    { k: `Fire detections · ${span}`, v: nf.format(d.hotspots), d: `${d.sensor} · ${d.fire_days} of ${d.days_in_range} days had fire` },
+    { k: `Fire detections · ${span}`, v: nf.format(d.hotspots), d: d.days_in_range === 1 ? `${d.sensor} · one day` : `${d.sensor} · ${d.fire_days} of ${d.days_in_range} days had fire` },
     { k: "Fire cell-days", v: nf.format(d.cell_days), d: "5 km patches burning on a day, the site's standard unit" },
     { k: "Busiest day", v: fmtDay(d.busiest_day.date), d: `${nf.format(d.busiest_day.hotspots)} detections that day` },
     { k: "Most fires in", v: top.region, d: `${top.share}% of detections · peak ${fmtDay(top.peak_date)}` },
@@ -1476,7 +1417,7 @@ async function loadRange() {
     type: "bar",
     data: { labels, datasets: [{ label: "Fire detections", data: values,
       backgroundColor: labels.map((x) => (x === d.busiest_day.date ? t.fire[3] : t.fire[1])),
-      borderRadius: { topLeft: 3, topRight: 3 }, borderSkipped: "start", categoryPercentage: 0.9, barPercentage: 0.95 }] },
+      borderRadius: { topLeft: 3, topRight: 3 }, borderSkipped: "start", categoryPercentage: 0.9, barPercentage: 0.95, maxBarThickness: 48 }] },
     options: {
       responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
       plugins: { legend: { display: false }, tooltip: { ...chartTooltip(t),
@@ -1580,14 +1521,6 @@ document.addEventListener("click", (e) => {
       ["Day by day", "detections", "total_frp_mw"],
       ...d.daily.map((x) => [x.date, x.hotspots, x.frp]),
     ]), "text/csv");
-  } else if (kind === "month-points") {
-    const q = new URLSearchParams({ scope: state.scope, start: isoDate(state.year, state.month, 1),
-      end: isoDate(state.year, state.month, lastDayOf(state.year, state.month)), sensor: $("#f-sensor").value });
-    const a = document.createElement("a");
-    a.href = API + "/hotspots/range.csv?" + q; a.download = `fire_points_${slug}_${state.year}-${pad2(state.month)}.csv`;
-    document.body.append(a); a.click(); a.remove();
-  } else if (kind === "month-range") {
-    initRange().then(() => { rgMonth(state.year, state.month); location.hash = "/dashboard?section=range"; });
   }
 });
 
@@ -1604,7 +1537,7 @@ function loadOverview() {
   const observed = state.series.at(-1);
   if (!observed) return;
   const outlook = firstForecastPeriod(observed);
-  import("./overview.js?v=ui-20261115z").then(({ renderOverview }) => {
+  import("./overview.js?v=ui-20261116b").then(({ renderOverview }) => {
     if (route.page === "home") {
       renderOverview({ observed, outlook, getJSON, scope: state.scope, openExplorer(year, month) {
         setYM(year, month);
@@ -1627,7 +1560,7 @@ function loadExplorerWatchlist() {
   const outlook = forecast
     ? { year: picked.year, month: picked.month, enso: ensoFor(picked.year) }
     : firstForecastPeriod(latest);
-  import("./overview.js?v=ui-20261115z").then(({ renderExplorerWatchlist }) => {
+  import("./overview.js?v=ui-20261116b").then(({ renderExplorerWatchlist }) => {
     if (route.page !== "explorer") return;
     renderExplorerWatchlist({
       outlook, layer: forecast ? "forecast" : "observed",
@@ -1656,7 +1589,7 @@ const pages = {
   docs: "Docs",
 };
 const sections = {
-  dashboard: ["calendar", "hotspots", "history", "range"],
+  dashboard: ["calendar", "hotspots", "history"],
   data: ["sources", "methods", "calibration"],
   docs: ["catalogue", "climate", "skill", "files", "reproduce"],
 };
@@ -1699,7 +1632,7 @@ function updateRoute(moveFocus = false) {
   const slot = view.querySelector("[data-filters]");
   filters.hidden = !slot;
   if (slot && filters.parentElement !== slot) slot.append(filters);
-  const observed = page === "dashboard" && (section === "calendar" || section === "hotspots");
+  const observed = page === "dashboard" && section === "calendar";   // the hotspot map has its own date picker
   const forecast = page === "forecast" || page === "haze";
   filters.querySelector("[data-timeline-filter]").hidden = page !== "explorer";
   filters.querySelectorAll("[data-observed-filter]").forEach((label) => { label.hidden = !observed; });
@@ -1744,13 +1677,8 @@ function renderView() {
         renderTS();
       } else if (route.section === "history") {
         renderHist();
-      } else if (route.section === "range") {
-        renderRange();
       } else {
-        if (!map) initMap();
-        map.invalidateSize({ pan: false });
-        fitMap();
-        loadMap();
+        renderRange();   // hotspot map for a chosen day or date range
       }
       break;
     case "forecast":
