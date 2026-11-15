@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fire Calendar · Malaysia & Indonesia</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <h1>Fire Calendar</h1>
+      <p class="sub">MODIS and VIIRS fire hotspots harmonized into one record for Malaysia and Indonesia, 2003–2025. Data: NASA FIRMS.</p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="filters" role="group" aria-label="Filters">
+      <label>Area <select id="f-scope"></select></label>
+      <label>Year <select id="f-year"></select></label>
+      <label>Month <select id="f-month"></select></label>
+      <span id="status" class="status" role="status"></span>
+    </div>
+
+    <section class="tiles" id="tiles" aria-label="Key figures"></section>
+
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Monthly fire activity</h2>
+          <p class="note">Fire cell-days per month on the VIIRS scale. Before Feb 2012 the values are MODIS counts calibrated to VIIRS. Click a month to select it.</p>
+        </div>
+        <div class="controls">
+          <label class="check"><input type="checkbox" id="t-raw" checked> Raw MODIS</label>
+          <label class="check"><input type="checkbox" id="t-log"> Log scale</label>
+        </div>
+      </div>
+      <div class="legend" id="ts-legend"></div>
+      <div class="chart-box"><canvas id="ts" aria-label="Monthly fire activity line chart" role="img"></canvas></div>
+    </section>
+
+    <div class="grid2">
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>Burning calendar</h2>
+            <p class="note" id="cal-note"></p>
+          </div>
+          <div class="seg" role="radiogroup" aria-label="Calendar colour">
+            <button type="button" data-mode="activity" aria-pressed="true">Activity</button>
+            <button type="button" data-mode="anomaly" aria-pressed="false">vs typical</button>
+          </div>
+        </div>
+        <div class="cal" id="cal"></div>
+        <div class="scale" id="cal-legend"></div>
+        <details class="table-view">
+          <summary>Show as table</summary>
+          <div class="table-wrap" id="cal-table"></div>
+        </details>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2 id="map-title">Hotspot map</h2>
+            <p class="note" id="map-note"></p>
+          </div>
+          <label class="inline">Sensor
+            <select id="f-sensor">
+              <option value="auto">Auto</option>
+              <option value="VIIRS">VIIRS</option>
+              <option value="MODIS">MODIS</option>
+            </select>
+          </label>
+        </div>
+        <div id="map" class="map"></div>
+        <div class="scale" id="map-legend"></div>
+      </section>
+    </div>
+
+    <div class="grid2">
+      <section class="card">
+        <div class="card-head">
+          <div><h2>How does a month compare with history?</h2></div>
+        </div>
+        <div class="filters-inline">
+          <label>Month <select id="h-month"></select></label>
+          <label>Year <select id="h-year"></select></label>
+          <span class="note">Tip: click any calendar square or bar.</span>
+        </div>
+        <div class="legend" id="hist-legend"></div>
+        <div class="chart-box short"><canvas id="hist" aria-label="Same month across all years bar chart" role="img"></canvas></div>
+        <div class="callout" id="hist-callout"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>Haze preparedness for this area</h2>
+            <p class="note">Typical fire season, based on the 2003–2025 median of each calendar month. Smoke from these fires can reach Malaysia and Singapore within days, depending on the winds.</p>
+          </div>
+        </div>
+        <div class="chip-row" id="season-chips" aria-label="Typical fire season by month"></div>
+        <p class="risk-line" id="season-line"></p>
+        <div id="outlook-wrap" hidden>
+          <div class="chip-label" id="outlook-label"></div>
+          <div class="chip-row" id="outlook-chips" aria-label="Forecast chance of above-normal burning by month"></div>
+          <p class="note" id="outlook-line"></p>
+        </div>
+        <div class="callout prep">
+          <h3 id="prep-title">Before the high-risk months</h3>
+          <ul id="prep-list"></ul>
+          <p class="fine">General guidance only, not medical advice. Fire counts show where and when burning happens, not the air quality where you are.</p>
+        </div>
+      </section>
+    </div>
+
+    <section class="card" id="forecast-card">
+      <div class="card-head">
+        <div>
+          <h2>Fire outlook: forecast</h2>
+          <p class="note">Forecast of monthly fire activity after the data ends (Dec 2025). It combines the recent seasonal pattern with the El Niño index (NOAA ONI). El Niño brings drought to Indonesia and Borneo and drove the 2015, 2019 and 2023 haze seasons.</p>
+        </div>
+        <div class="controls">
+          <label class="inline">Year <select id="fc-year"></select></label>
+          <label class="inline">El Niño <select id="fc-enso"></select></label>
+        </div>
+      </div>
+      <p class="enso-line" id="enso-line"></p>
+      <div class="tiles inner" id="fc-tiles"></div>
+      <div class="legend" id="fc-legend"></div>
+      <div class="chart-box"><canvas id="fc-chart" aria-label="Fire forecast chart" role="img"></canvas></div>
+      <p class="note" id="fc-notes"></p>
+      <details class="table-view">
+        <summary>Show forecast table</summary>
+        <div class="table-wrap"><table class="data" id="fc-table"></table></div>
+      </details>
+
+      <div class="subsection">
+        <h3 class="sub-h">Where: forecast fire risk by place and month</h3>
+        <p class="note" id="where-note">Chance of at least one fire day in each ~28 km grid cell. Pick a month.</p>
+        <div class="chip-row month-pick" id="where-months" role="radiogroup" aria-label="Forecast month"></div>
+        <div class="where">
+          <div>
+            <div id="fc-map" class="map"></div>
+            <div class="scale" id="fc-map-legend"></div>
+          </div>
+          <div>
+            <h4 class="mini-h" id="top-title">Top areas</h4>
+            <ol class="top-list" id="top-areas"></ol>
+          </div>
+        </div>
+        <h4 class="mini-h">Which month, which place: expected fire days in <span id="matrix-year"></span></h4>
+        <p class="note">Rows are areas, largest first. Each row is coloured relative to that area's own peak month (outlined), so the grid shows each area's fire season. Click a cell to show that month on the map. Area names are approximate (nearest province, state or division centre).</p>
+        <div class="table-wrap"><div class="matrix" id="fc-matrix"></div></div>
+        <p class="note" id="where-skill"></p>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>MODIS → VIIRS calibration</h2>
+          <p class="note">Each dot is one month in which both sensors observed (Feb 2012–2025). The line is the fitted model used to bring older MODIS months onto the VIIRS scale.</p>
+        </div>
+        <label class="inline" id="calib-pick-wrap">Region <select id="calib-pick"></select></label>
+      </div>
+      <div class="calib">
+        <div class="chart-box square"><canvas id="scatter" aria-label="MODIS versus VIIRS scatter plot" role="img"></canvas></div>
+        <div>
+          <div class="table-wrap"><table class="data" id="calib-table"></table></div>
+          <p class="note" id="calib-foot" style="margin-top:10px"></p>
+        </div>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <p><strong>Method.</strong> Every hotspot is snapped to a 0.05° grid. A cell that burns on a given day counts once, as one <em>fire cell-day</em>, however many pixels detect it. This evens out the resolution gap between VIIRS (375 m) and MODIS (1 km). For each region, either a linear or a power-law model is fitted on the overlap months. It is validated by leaving out one year at a time, and the model with the lower error is kept. "vs typical" compares each month with the median of the same calendar month across 2003–2025.</p>
+      <p>Hotspot data: NASA FIRMS (MODIS C6.1, VIIRS S-NPP 375 m). Basemap © Esri, © OpenStreetMap contributors.</p>
+    </footer>
+  </main>
+
+  <div id="tip" class="tip" role="tooltip" hidden></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

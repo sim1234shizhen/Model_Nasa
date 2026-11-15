@@ -64,10 +64,10 @@
             <li><i class="lv1"></i><span>Moderate · 3–7 days</span><b id="hero-n1">–</b></li>
             <li><i class="lv2"></i><span>Heavy · 8+ days</span><b id="hero-n2">–</b></li>
           </ul>
-          <div class="fine">Select a level to show or hide it. Taller columns indicate more days of fire.</div>
+          <div class="fine">Select a level to show or hide it. Taller, redder flames mean more days of fire.</div>
         </details>
         <div class="hero-buttons">
-          <button type="button" class="hero-reset" id="hero-mode">Show 3D columns</button>
+          <button type="button" class="hero-reset" id="hero-mode">Show flat cells</button>
           <button type="button" class="hero-reset" id="hero-reset" hidden>Reset view</button>
         </div>
       </aside>
@@ -193,17 +193,28 @@
 
       <div class="subsection">
         <h3 class="sub-h">Where: forecast fire risk by place and month</h3>
-        <p class="note" id="where-note">Chance of at least one fire day in each ~28 km grid cell. Pick a month.</p>
-        <div class="chip-row month-pick" id="where-months" role="radiogroup" aria-label="Forecast month"></div>
-        <div class="where">
-          <div>
-            <div id="fc-map" class="map"></div>
-            <div class="scale" id="fc-map-legend"></div>
+        <p class="note" id="where-note">Chance of at least one fire day in each ~28 km grid cell. Pick a month, or play the year.</p>
+        <div class="risk-panel" id="risk-panel">
+          <div class="rk-head">
+            <p class="rk-title" id="rk-title">Fire-risk mist</p>
+            <p class="rk-sub">Colour and density follow the forecast chance of fire. Drag to turn the map; hover or tap for a cell's own value.</p>
           </div>
-          <div>
-            <h4 class="mini-h" id="top-title">Top areas</h4>
-            <ol class="top-list" id="top-areas"></ol>
+          <div class="rk-stats" id="rk-stats"></div>
+          <div class="rk-body">
+            <div class="rk-stage">
+              <div id="fc-map"></div>
+              <button type="button" class="rk-reset" id="rk-reset" hidden>Reset view</button>
+            </div>
+            <div class="rk-side">
+              <h4 id="top-title">Top areas</h4>
+              <ol class="rk-top" id="top-areas"></ol>
+            </div>
           </div>
+          <div class="rk-time">
+            <button type="button" class="rk-play" id="rk-play" aria-pressed="false">Play year</button>
+            <div class="rk-months" id="where-months" role="radiogroup" aria-label="Forecast month"></div>
+          </div>
+          <div class="rk-legend" id="fc-map-legend"></div>
         </div>
         <h4 class="mini-h">Which month, which place: expected fire days in <span id="matrix-year"></span></h4>
         <p class="note">Rows are areas, largest first. Each row is coloured relative to that area's own peak month (outlined), so the grid shows each area's fire season. Click a cell to show that month on the map. Area names are approximate (nearest province, state or division centre).</p>

@@ -821,26 +821,25 @@ function renderForecast() {
 }
 
 /* ---------- forecast: where ---------- */
-let fcMap = null, fcBase = null, fcCells = null, whereReq = 0;
+let risk = null, riskLoading = null, whereReq = 0, playTimer = 0;
 const where = { data: null, month: null };
+// chance of fire -> colour and opacity of the mist; the legend uses the same stops
+const RISK_STOPS = [[5, "#2f9e8f", 0.32], [20, "#7cc36a", 0.52], [35, "#f2cf4a", 0.68], [50, "#f59432", 0.82], [70, "#ee4f2a", 0.92], [90, "#ff2020", 0.97]];
 
 function initFcMap() {
-  fcMap = L.map("fc-map", { preferCanvas: true, minZoom: 4, maxZoom: 11, zoomSnap: 0.25 });
-  setFcBasemap();
+  if (riskLoading) return riskLoading;
+  riskLoading = import("./risk-map.js")
+    .then((m) => m.createRiskMap($("#fc-map"), {
+      stops: RISK_STOPS, reduced: matchMedia("(prefers-reduced-motion: reduce)").matches,
+      onMoved: (moved) => { $("#rk-reset").hidden = !moved; },
+    }))
+    .then((r) => { risk = r; if (where.data) risk.show(where.data, where.month); return r; })
+    .catch((e) => { $("#fc-map").innerHTML = `<p class="rk-fail">The map could not load (${esc(e.message)}). The ranking and the month bar still work.</p>`; });
+  return riskLoading;
 }
-function setFcBasemap() {
-  if (!fcMap) return;
-  if (fcBase) fcMap.removeLayer(fcBase);
-  fcBase = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", {
-    attribution: "Basemap &copy; Esri, HERE, Garmin, &copy; OpenStreetMap contributors", maxZoom: 16,
-  }).addTo(fcMap);
-}
-function fitFcMap() {
-  const regs = scopeRegionNames();
-  const boxes = state.regions.filter((r) => regs.includes(r.region)).map((r) => r.bbox);
-  if (!boxes.length || !fcMap) return;
-  fcMap.fitBounds([[Math.min(...boxes.map((x) => x[1])), Math.min(...boxes.map((x) => x[0]))],
-                   [Math.max(...boxes.map((x) => x[3])), Math.max(...boxes.map((x) => x[2]))]], { padding: [4, 4] });
+function stopPlay() {
+  clearInterval(playTimer); playTimer = 0;
+  const b = $("#rk-play"); b.setAttribute("aria-pressed", "false"); b.textContent = "Play year";
 }
 
 async function loadWhere() {
@@ -856,11 +855,11 @@ async function loadWhere() {
   if (id !== whereReq) return;
   where.data = d;
   // default month: the month with most expected fire days
+  stopPlay();
   if (!where.month) where.month = d.months.reduce((a, m) => (m.expected_fire_days > a.expected_fire_days ? m : a), d.months[0]).month;
-  $("#where-note").textContent = `Chance of at least one fire day in each ${d.cell_deg}° (~28 km) grid cell, ${d.year} (${d.enso_used}). Pick a month.`;
+  $("#where-note").textContent = `Chance of at least one fire day in each ${d.cell_deg}° (~28 km) grid cell, ${d.year} (${d.enso_used}). Pick a month, or play the year.`;
   const s = d.skill;
   $("#where-skill").textContent = `How reliable: tested on ${s.test_years} (each year predicted from earlier years only). The 10% of cells rated riskiest contained ${s.top10_capture_pct}% of all fire days. Ranking skill AUC = ${s.auc} (0.5 = guessing, 1 = perfect). Brier score ${s.brier}, compared with ${s.base_rate_brier} for guessing the same chance everywhere (lower is better).`;
-  fitFcMap();
   renderWhere();
 }
 
@@ -869,33 +868,37 @@ function renderWhere() {
   if (!d) return;
   const mi = where.month - 1, mo = d.months[mi];
 
-  // month picker, coloured by how much fire is expected that month
+  // time bar: one button per month, with a bar for how much fire is expected that month
   const maxTot = Math.max(...d.months.map((m) => m.expected_fire_days));
-  $("#where-months").innerHTML = d.months.map((m) => {
-    const share = m.expected_fire_days / maxTot;
-    const cls = share >= 0.5 ? "hi" : share >= 0.2 ? "mid" : "";
-    return `<button type="button" role="radio" class="chip ${cls}" data-m="${m.month}" aria-checked="${m.month === where.month}">${MONTHS[m.month - 1]}</button>`;
-  }).join("");
+  $("#where-months").innerHTML = d.months.map((m) =>
+    `<button type="button" role="radio" data-m="${m.month}" aria-checked="${m.month === where.month}" aria-label="${MONTHS_LONG[m.month - 1]}: about ${nf.format(Math.round(m.expected_fire_days))} fire days expected">` +
+    `<span class="rk-bar"><i style="height:${Math.max(4, (m.expected_fire_days / maxTot) * 100)}%"></i></span><b>${MONTHS[m.month - 1]}</b><small>${compact(Math.round(m.expected_fire_days))}</small></button>`).join("");
+
+  // headline figures for the month
+  const hi = mo.cells.filter((c) => c[2] >= 50).length;
+  const top = mo.cells.reduce((a, c) => (c[2] > a[2] ? c : a), mo.cells[0] || [0, 0, 0, 0, 0]);
+  $("#rk-title").textContent = `${MONTHS_LONG[mi]} ${d.year} · fire-risk mist`;
+  $("#rk-stats").innerHTML =
+    `<div><b>${nf.format(Math.round(mo.expected_fire_days))}</b><span>fire days expected</span></div>` +
+    `<div><b>${nf.format(hi)}</b><span>of ${nf.format(mo.cells.length)} cells at 50% or more</span></div>` +
+    `<div><b>${top[2]}%</b><span>highest chance${mo.cells.length ? " · " + esc(d.areas[top[4]]) : ""}</span></div>`;
 
   // map
-  const r = ramp(t.fire);
-  if (fcCells) fcCells.remove();
-  fcCells = L.layerGroup(mo.cells.map(([lat, lon, pct, fd10, ai]) =>
-    L.rectangle([[lat, lon], [lat + d.cell_deg, lon + d.cell_deg]], {
-      stroke: false, fillColor: r((pct - 5) / 85), fillOpacity: 0.85,
-    }).bindTooltip(`<b>${pct}% chance</b> of fire in ${MONTHS_LONG[mi]} ${d.year}<br>${esc(d.areas[ai])} · about ${(fd10 / 10).toFixed(1)} fire days expected<br><span style="opacity:.75">${lat.toFixed(2)}°, ${lon.toFixed(2)}° (cell SW corner)</span>`, { sticky: true })
-  )).addTo(fcMap);
-  $("#fc-map-legend").innerHTML = `<span>5%</span><span class="bar" style="background:${gradient(t.fire)}"></span><span>90% chance of ≥1 fire day</span>`;
+  if (risk) risk.show(d, where.month);
+  $("#fc-map-legend").innerHTML =
+    `<ul>${RISK_STOPS.slice(0, -1).map(([p, c], i) => `<li><i style="background:${c}"></i>${p}–${RISK_STOPS[i + 1][0]}%${i === RISK_STOPS.length - 2 ? "+" : ""}</li>`).join("")}</ul>` +
+    `<p>Chance of at least one fire day · ${d.cell_deg}° cells (about 28 km), smoothed for display, so read areas rather than exact edges · a forecast, not an observation</p>`;
 
   // top areas
   $("#top-title").textContent = `Top areas in ${MONTHS_LONG[mi]} ${d.year}`;
   const maxShare = Math.max(1, ...mo.top_areas.map((a) => a.share_pct));
   $("#top-areas").innerHTML = mo.top_areas.map((a) =>
     `<li data-area="${esc(a.area)}"><span class="an">${esc(a.area)}</span> <span class="ar">${esc(a.region)}</span>
-      <div class="bar" style="width:${(a.share_pct / maxShare) * 100}%"></div>
+      <div class="bar"><i style="width:${(a.share_pct / maxShare) * 100}%"></i></div>
       <div class="meta">${a.share_pct}% of expected fire days · ${a.high_risk_cells} cell${a.high_risk_cells === 1 ? "" : "s"} at ≥50% chance · highest ${a.max_chance_pct}%</div></li>`).join("");
 
   // area x month matrix
+  const r = ramp(t.fire);
   $("#matrix-year").textContent = d.year;
   const rows = d.area_matrix.slice(0, 14);
   let html = `<div></div>` + MONTHS.map((m) => `<div class="mh">${m}</div>`).join("");
@@ -915,12 +918,24 @@ function renderWhere() {
 function whereEvents() {
   $("#where-months").addEventListener("click", (e) => {
     const b = e.target.closest("[data-m]");
-    if (b) { where.month = +b.dataset.m; renderWhere(); }
+    if (b) { stopPlay(); where.month = +b.dataset.m; renderWhere(); }
   });
+  // play: step through the year, one month about every two seconds
+  $("#rk-play").addEventListener("click", () => {
+    if (playTimer) return stopPlay();
+    if (!where.data) return;
+    const b = $("#rk-play"); b.setAttribute("aria-pressed", "true"); b.textContent = "Pause";
+    const next = () => { if (route.page !== "forecast") return stopPlay(); where.month = (where.month % 12) + 1; renderWhere(); };
+    next(); playTimer = setInterval(next, 1900);
+  });
+  $("#rk-reset").addEventListener("click", () => { if (risk) risk.resetView(); });
+  const areaOf = (e) => { const li = e.target.closest("li[data-area]"); return li && where.data ? where.data.areas.indexOf(li.dataset.area) : -1; };
+  $("#top-areas").addEventListener("mouseover", (e) => { if (risk) risk.highlightArea(areaOf(e)); });
+  $("#top-areas").addEventListener("mouseleave", () => { if (risk) risk.highlightArea(-1); });
   const mtx = $("#fc-matrix");
   mtx.addEventListener("click", (e) => {
     const b = e.target.closest("[data-m]");
-    if (b) { where.month = +b.dataset.m; renderWhere(); }
+    if (b) { stopPlay(); where.month = +b.dataset.m; renderWhere(); }
   });
   mtx.addEventListener("mousemove", (e) => {
     const b = e.target.closest(".mc");
@@ -928,15 +943,10 @@ function whereEvents() {
     showTip(`<b>${esc(b.dataset.a)}</b><br>${MONTHS_LONG[b.dataset.m - 1]} ${where.data.year}: about ${nf.format(+b.dataset.v)} fire days expected`, e.clientX, e.clientY);
   });
   mtx.addEventListener("mouseleave", hideTip);
-  // click a top area -> zoom map to its cells
+  // click a top area -> fly the map to its cells
   $("#top-areas").addEventListener("click", (e) => {
-    const li = e.target.closest("li[data-area]");
-    if (!li || !where.data) return;
-    const d = where.data, ai = d.areas.indexOf(li.dataset.area);
-    const cs = d.months[where.month - 1].cells.filter((c) => c[4] === ai);
-    if (!cs.length) return;
-    fcMap.fitBounds([[Math.min(...cs.map((c) => c[0])), Math.min(...cs.map((c) => c[1]))],
-                     [Math.max(...cs.map((c) => c[0])) + d.cell_deg, Math.max(...cs.map((c) => c[1])) + d.cell_deg]], { padding: [20, 20] });
+    const ai = areaOf(e);
+    if (ai >= 0 && risk) { stopPlay(); risk.focusArea(ai); }
   });
 }
 
@@ -1026,8 +1036,8 @@ function renderView() {
       }
       break;
     case "forecast":
-      if (!fcMap) initFcMap();
-      fcMap.invalidateSize({ pan: false });
+      initFcMap();
+      if (risk) risk.resize();
       loadForecast();
       break;
     case "haze":
