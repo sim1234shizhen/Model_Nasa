@@ -1,4 +1,4 @@
-/* BuriningView - talks to the FastAPI backend under /api.
+/* BurningView - talks to the FastAPI backend under /api.
    If you host this page somewhere else, set window.API_BASE = "http://127.0.0.1:8000" before this script. */
 const API = (window.API_BASE || "") + "/api";
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -174,7 +174,6 @@ function syncTimeline() {
   timeline.value = state.cursor;
   timeline.setAttribute("aria-valuetext", `${date}, ${forecast ? "forecast" : "satellite detections"}`);
   $("#f-date-label").textContent = date;
-  $("#f-mode-chip").textContent = forecast ? "Forecast" : "Detections";
   wrap.dataset.mode = forecast ? "forecast" : "observed";
 }
 
@@ -195,20 +194,38 @@ function setCursor(value) {
 }
 
 function setYM(year, month) {
+  periodSelected = true;
   state.year = year;
   state.month = month;
   syncFilters();
-  if (activeSection("dashboard", "calendar")) {
-    renderTiles();
-    tsChart?.update("none");
-    renderCal();
-  }
-  if (activeSection("dashboard", "history")) renderHist();
-  if (activeSection("dashboard", "hotspots")) loadMap();
+  if (route.page !== "dashboard" || !ready) return;
+  loadDashboardSummary();
+  renderTiles();
+  tsChart?.update("none");
+  renderCal();
+  renderHist();
+  loadMap();
 }
 
 let scopeRequest = 0;
+let allRegionsSeries, previousScope;
+
+function switchDashboardScope(entering) {
+  ++scopeRequest;
+  if (entering) {
+    previousScope = { scope: state.scope, series: state.series };
+    state.scope = "All";
+    state.series = allRegionsSeries;
+  } else {
+    Object.assign(state, previousScope);
+    previousScope = null;
+  }
+  $("#f-scope").value = state.scope;
+  setStatus("");
+}
+
 async function changeScope(scope) {
+  if (route.page === "dashboard") return;
   const request = ++scopeRequest;
   setStatus("Loading…");
   try {
@@ -224,6 +241,33 @@ async function changeScope(scope) {
   state.scope = scope;
   setStatus("");
   renderView();
+}
+
+let dashboardModule, periodSelected = false;
+
+function loadDashboardSummary(jumpTarget = null) {
+  const latest = state.series.at(-1);
+  if (!periodSelected && latest) {
+    periodSelected = true;
+    state.year = latest.year;
+    state.month = latest.month;
+    syncFilters();
+  }
+  dashboardModule ??= import("./dashboard.js?v=watchlist-add").catch(() => {
+    dashboardModule = null;
+    if (route.page === "dashboard") setStatus("The dashboard summary could not load.", true);
+  });
+  dashboardModule.then(async (module) => {
+    if (!module || route.page !== "dashboard") return;
+    await module.renderDashboard({
+      series: state.series, regions: state.regions, scope: state.scope,
+      year: state.year, month: state.month, getJSON, setMonth: (month) => setYM(state.year, month),
+      isVisible: () => route.page === "dashboard", tokens: tokens(), chartTooltip,
+    });
+    if (jumpTarget && route.page === "dashboard" && route.panel === jumpTarget.dataset.dashboardPanel) {
+      jumpToDashboardPanel(jumpTarget);
+    }
+  });
 }
 
 /* ---------- KPI tiles ---------- */
@@ -461,7 +505,7 @@ function initMap() {
   fitMap();
   // re-bin when zooming changes the sensible cell size
   map.on("zoomend", () => {
-    if (activeSection("dashboard", "hotspots") && cellFor(map.getZoom()) !== lastCell) loadMap();
+    if (route.page === "dashboard" && cellFor(map.getZoom()) !== lastCell) loadMap();
   });
 }
 // grid cell (degrees) that stays a few pixels wide at the current zoom
@@ -823,7 +867,7 @@ function renderHaze() {
       <span class="prep-step" aria-hidden="true">${i + 1}</span>
       <b>${esc(tip.title)}</b><span class="prep-text">${esc(tip.text)}</span>
       <button type="button" class="prep-more-btn" data-tone="${tip.tone}" aria-expanded="${open}" aria-controls="prep-more-${tip.tone}">
-        <span>${open ? "Show less" : "Learn more"}</span><i aria-hidden="true">▾</i></button>
+        <span>${open ? "Show less" : "Learn more"}</span><i aria-hidden="true">â–¾</i></button>
       <div class="prep-more" id="prep-more-${tip.tone}"${open ? "" : " hidden"}>
         <ul class="prep-facts">${tip.facts.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>
         <p class="prep-src-h" id="prep-src-${tip.tone}">Read more</p>
@@ -1152,10 +1196,10 @@ function loadOverview() {
   const observed = state.series.at(-1);
   if (!observed) return;
   const outlook = firstForecastPeriod(observed);
-  import("./overview.js?v=ui-20261115j").then(({ renderOverview }) => {
+  import("./overview.js?v=world-cell-forecast").then(({ renderOverview }) => {
     if (route.page === "home") {
-      renderOverview({ observed, outlook, getJSON, scope: state.scope, openExplorer(year, month) {
-        setYM(year, month);
+      renderOverview({ observed, outlook, getJSON, scope: state.scope, regions: state.regions, openExplorer(year, month) {
+        setCursor(ym({ year, month }));
         location.hash = "/explorer";
       } });
     }
@@ -1175,19 +1219,13 @@ function loadExplorerWatchlist() {
   const outlook = forecast
     ? { year: picked.year, month: picked.month, enso: ensoFor(picked.year) }
     : firstForecastPeriod(latest);
-  import("./overview.js?v=ui-20261115j").then(({ renderExplorerWatchlist }) => {
+  import("./overview.js?v=world-cell-forecast").then(({ renderExplorerWatchlist }) => {
     if (route.page !== "explorer") return;
     renderExplorerWatchlist({
       outlook, layer: forecast ? "forecast" : "observed",
       getJSON, regions: state.regions, escape: esc,
-      onPlace(scope) {
-        const control = $("#f-scope");
-        if (control.value === scope) return;
-        control.value = scope;
-        changeScope(scope);
-      },
-      updateTerrain(place, forecast) {
-        terrainModule.then((module) => module?.updateExplorerView?.(place, forecast));
+      updateTerrain(focus, forecast) {
+        terrainModule.then((module) => module?.updateExplorerView?.(focus, forecast));
       },
     });
   }).catch(() => { $("#explorer-watch-status").textContent = "The place watchlist could not load."; });
@@ -1196,7 +1234,6 @@ function loadExplorerWatchlist() {
 /* ---------- navigation ---------- */
 const pages = {
   home: "Overview",
-  world: "World Fire Atlas",
   explorer: "Explorer",
   dashboard: "Fire Dashboard",
   forecast: "Fire Forecast",
@@ -1205,9 +1242,8 @@ const pages = {
   docs: "Docs",
 };
 const sections = {
-  dashboard: ["calendar", "hotspots", "history"],
-  data: ["sources", "methods", "calibration"],
-  docs: ["catalogue", "climate", "skill", "files", "reproduce"],
+  data: ["sources", "methods", "calibration", "world"],
+  docs: ["key", "catalogue", "climate", "world", "skill", "limits", "files", "reproduce"],
 };
 let route = { page: "home" };
 let ready = false;
@@ -1217,38 +1253,109 @@ function activeSection(page, section) {
   return route.page === page && route.section === section;
 }
 
+const dashboardNav = $(".dashboard-nav");
+const dashboardLinks = new Map([...dashboardNav.querySelectorAll("a")].map((link) => [
+  new URLSearchParams(link.hash.split("?")[1]).get("panel"), link,
+]));
+const dashboardPanels = [...document.querySelectorAll("[data-dashboard-panel]")];
+
+function dashboardPanel(name) {
+  return dashboardPanels.find((panel) => panel.dataset.dashboardPanel === name);
+}
+
+function highlightDashboardSection(name) {
+  const link = dashboardLinks.get(name);
+  const previous = dashboardNav.querySelector("[aria-current]");
+  if (link === previous) return;
+  previous?.removeAttribute("aria-current");
+  link.setAttribute("aria-current", "location");
+
+  if (dashboardNav.scrollWidth > dashboardNav.clientWidth) {
+    const nav = dashboardNav.getBoundingClientRect();
+    const item = link.getBoundingClientRect();
+    const offset = item.left < nav.left ? item.left - nav.left : Math.max(0, item.right - nav.right);
+    if (offset) dashboardNav.scrollBy({ left: offset, behavior: "instant" });
+  }
+}
+
+let dashboardScrollFrame = 0;
+function trackDashboardScroll() {
+  if (route.page !== "dashboard" || dashboardScrollFrame) return;
+  dashboardScrollFrame = requestAnimationFrame(() => {
+    dashboardScrollFrame = 0;
+    if (route.page !== "dashboard") return;
+
+    const readingLine = parseFloat(getComputedStyle(dashboardPanels[0]).scrollMarginTop) + 16;
+    let activePanel = null;
+    for (const panel of dashboardPanels) {
+      if (panel.getBoundingClientRect().top > readingLine) break;
+      activePanel = panel;
+    }
+
+    // The last section may be too short to reach the reading line.
+    const page = document.scrollingElement;
+    if (page.scrollTop > 0 && page.scrollTop + page.clientHeight >= page.scrollHeight - 2) {
+      activePanel = dashboardPanels.at(-1);
+    }
+    highlightDashboardSection(activePanel?.dataset.dashboardPanel ?? null);
+  });
+}
+
+function jumpToDashboardPanel(panel, animate = false) {
+  const behavior = animate && !matchMedia("(prefers-reduced-motion: reduce)").matches ? "smooth" : "instant";
+  panel.scrollIntoView({ block: "start", behavior });
+  const heading = panel.querySelector("h2");
+  heading.tabIndex = -1;
+  heading.focus({ preventScroll: true });
+}
+
 function updateRoute(moveFocus = false) {
   const [path, query] = location.hash.slice(1).split("?");
   const name = path.startsWith("/") ? path.slice(1) : "";
   const pageName = name === "explore" ? "dashboard" : name;
   const page = Object.hasOwn(pages, pageName) ? pageName : "home";
   const options = sections[page] || [];
-  const requested = new URLSearchParams(query).get("section");
+  const params = new URLSearchParams(query);
+  const requested = params.get("section");
   const section = options.includes(requested) ? requested : options[0];
   const changedPage = route.page !== page;
   const changedSection = route.section !== section;
-  route = { page, section };
+  if (ready && changedPage && (page === "dashboard" || route.page === "dashboard")) {
+    switchDashboardScope(page === "dashboard");
+  }
+  const legacyPanel = ["calendar", "hotspots", "history"].includes(requested) ? requested : null;
+  const jumpTarget = page === "dashboard" ? dashboardPanel(params.get("panel") ?? legacyPanel) : null;
+  const panel = jumpTarget?.dataset.dashboardPanel ?? null;
+  const changedPanel = (route.panel ?? null) !== panel;
+  route = { page, section, panel };
   if (page !== "explorer") $("#place-search-dialog").close();
-  document.title = pages[page] + " · BuriningView";
+  document.title = pages[page] + " · BurningView";
   document.body.classList.toggle("map-page", page === "explorer");
+  document.body.classList.toggle("dashboard-page", page === "dashboard");
 
   document.querySelectorAll("[data-page]").forEach((view) => { view.hidden = view.dataset.page !== page; });
   const view = document.querySelector('[data-page="' + page + '"]');
-  view.querySelectorAll("[data-section]").forEach((panel) => { panel.hidden = panel.dataset.section !== section; });
+  view.querySelectorAll("[data-section]").forEach((sectionView) => { sectionView.hidden = sectionView.dataset.section !== section; });
   document.querySelectorAll("[data-nav]").forEach((link) => {
     if (link.dataset.nav === page) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
-  view.querySelectorAll(".section-nav a").forEach((link) => {
-    if (new URLSearchParams(link.hash.split("?")[1]).get("section") === section) link.setAttribute("aria-current", "page");
-    else link.removeAttribute("aria-current");
-  });
+  if (page === "dashboard") {
+    highlightDashboardSection(panel);
+  } else {
+    view.querySelectorAll(".section-nav a").forEach((link) => {
+      const linkParams = new URLSearchParams(link.hash.split("?")[1]);
+      if (linkParams.get("section") === section) link.setAttribute("aria-current", "page");
+      else link.removeAttribute("aria-current");
+    });
+  }
 
   const filters = $("#filters");
   const slot = view.querySelector("[data-filters]");
   filters.hidden = !slot;
   if (slot && filters.parentElement !== slot) slot.append(filters);
-  const observed = page === "dashboard" && section !== "history";
+  const observed = page === "dashboard";
+  $("#f-scope").closest("label").hidden = observed;
   const forecast = page === "forecast" || page === "haze";
   filters.querySelector("[data-timeline-filter]").hidden = page !== "explorer";
   filters.querySelectorAll("[data-observed-filter]").forEach((label) => { label.hidden = !observed; });
@@ -1256,11 +1363,17 @@ function updateRoute(moveFocus = false) {
   $("#status").hidden = (page === "data" && section !== "calibration") || page === "docs";
   hideTip();
 
-  if (moveFocus && (changedPage || (changedSection && !document.activeElement.closest(".section-nav")))) {
+  const changedView = changedPage || changedSection;
+  if (jumpTarget) {
+    if (changedPage || changedPanel) jumpToDashboardPanel(jumpTarget, moveFocus && !changedPage);
+  } else if (moveFocus && (changedPage || (page === "dashboard" && (changedSection || changedPanel))
+    || (changedSection && !document.activeElement.closest(".section-nav")))) {
     window.scrollTo(0, 0);
-    view.querySelector("h1").focus({ preventScroll: true });
+    if (changedPage || !document.activeElement.closest(".section-nav")) {
+      view.querySelector("h1").focus({ preventScroll: true });
+    }
   }
-  if (ready && (changedPage || changedSection)) renderView();
+  if (ready && changedView) renderView(jumpTarget);
 }
 
 function renderDocToc() {
@@ -1277,32 +1390,29 @@ function renderDocToc() {
   }));
 }
 
-function renderView() {
+function renderView(jumpTarget = dashboardPanel(route.panel)) {
   switch (route.page) {
     case "home":
       loadOverview();
       break;
-    case "world":
-      if (window.renderWorld) window.renderWorld();   // world.js
-      break;
     case "explorer":
-      terrainModule ??= import("./hero3d.js?v=forecast-flames").catch(() => { $("#hero-status").textContent = "3D view could not load"; });
+      terrainModule ??= import("./hero3d.js?v=world-cell-forecast").catch(() => { $("#hero-status").textContent = "3D view could not load"; });
       loadExplorerWatchlist();
       break;
-    case "dashboard":
-      if (route.section === "calendar") {
-        renderTiles();
-        renderCal();
-        renderTS();
-      } else if (route.section === "history") {
-        renderHist();
-      } else {
-        if (!map) initMap();
-        map.invalidateSize({ pan: false });
-        fitMap();
-        loadMap();
-      }
+    case "dashboard": {
+      const through = state.series.at(-1);
+      $("#dashboard-coverage").textContent = through ? `Data through ${MONTHS_LONG[through.month - 1]} ${through.year}` : "";
+      loadDashboardSummary(jumpTarget);
+      renderTiles();
+      renderCal();
+      renderTS();
+      renderHist();
+      if (!map) initMap();
+      map.invalidateSize({ pan: false });
+      fitMap();
+      loadMap();
       break;
+    }
     case "forecast":
       if (!fcMap) initFcMap();
       fcMap.invalidateSize({ pan: false });
@@ -1314,6 +1424,9 @@ function renderView() {
       break;
     case "data":
       if (route.section === "calibration") renderCalib();
+      if (route.section === "world") {
+        import("./world-map.js?v=watchlist-add").then((m) => m.renderWorldMap()).catch(() => {});
+      }
       break;
     case "docs":
       renderDocToc();
@@ -1330,7 +1443,7 @@ async function boot() {
     ]);
     state.regions = regions;
     state.calib = calib;
-    state.series = h.series;
+    state.series = allRegionsSeries = h.series;
     state.oni = oni;
   } catch (e) {
     setStatus(`Could not reach the API: ${e.message}`, true);
@@ -1362,12 +1475,25 @@ async function boot() {
   cal.addEventListener("focusout", hideTip);
 
   ready = true;
-  renderView();
+  if (route.page === "dashboard") switchDashboardScope(true);
+  renderView(dashboardPanel(route.panel));
 }
 
 $(".skip").addEventListener("click", (event) => {
   event.preventDefault();
   $("#main").focus();
+});
+window.addEventListener("scroll", trackDashboardScroll, { passive: true });
+window.addEventListener("resize", trackDashboardScroll);
+new ResizeObserver(trackDashboardScroll).observe($(".dashboard-content"));
+
+dashboardNav.addEventListener("click", (event) => {
+  const link = event.target.closest("a");
+  if (!link || link.hash !== location.hash || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  const panel = dashboardPanel(route.panel);
+  if (panel) jumpToDashboardPanel(panel, true);
+  else window.scrollTo(0, 0);
 });
 window.addEventListener("hashchange", () => updateRoute(true));
 updateRoute();

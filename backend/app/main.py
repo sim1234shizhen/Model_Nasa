@@ -14,10 +14,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import CLEAN_DIR, CORS_ORIGINS, DATA_DIR, FRONTEND_DIR
-from app.routers import consult, datasets, fires, harmonized, predict, stats
+from app.routers import consult, datasets, fires, harmonized, predict, stats, world, world_fires
 from app.services import forecast as forecast_svc
 from app.services import harmonized as harmonized_svc
 from app.services import spatial_forecast as spatial_svc
+from app.services import world_spatial_forecast as world_spatial_svc
 
 
 def _warm_up():
@@ -29,6 +30,7 @@ def _warm_up():
     try:
         harmonized_svc.clean_hotspots()
         spatial_svc.calibration()  # backtest for the place-by-place forecast
+        world_spatial_svc.warm_up()  # global cell forecast for every country
     except Exception as e:
         print(f"[warm-up] hotspot data / spatial forecast not ready: {e}")
 
@@ -60,6 +62,8 @@ app.include_router(stats.router)
 app.include_router(predict.router)
 app.include_router(harmonized.router)
 app.include_router(consult.router)
+app.include_router(world.router)
+app.include_router(world_fires.router)
 
 
 @app.get("/api/health", tags=["health"])

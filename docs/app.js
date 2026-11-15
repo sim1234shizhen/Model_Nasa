@@ -1,4 +1,4 @@
-/* BuriningView - talks to the FastAPI backend under /api.
+/* BurningView - talks to the FastAPI backend under /api.
    If you host this page somewhere else, set window.API_BASE = "http://127.0.0.1:8000" before this script. */
 const API = (window.API_BASE || "") + "/api";
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -117,16 +117,19 @@ function buildFilters() {
   const first = state.series[0];
   const last = state.series.at(-1);
   if (first && last) {
-    timeline.min = ym(first);
-    timeline.max = ym(last);
-    timeline.disabled = timeline.min === timeline.max;
+    // One track: observed months, then the two forecast years the API allows.
+    state.timelineMin = ym(first);
+    state.observedMax = ym(last);
+    state.timelineMax = (last.year + 2) * 12 + 12;
+    state.cursor ??= state.observedMax;
+    timeline.min = state.timelineMin;
+    timeline.max = state.timelineMax;
+    timeline.disabled = state.timelineMin === state.timelineMax;
     $("#f-first-year").textContent = first.year;
-    $("#f-last-year").textContent = last.year;
+    $("#f-last-year").textContent = last.year + 2;
+    paintTimeline();
   }
-  timeline.addEventListener("input", () => {
-    const monthIndex = timeline.valueAsNumber - 1;
-    setYM(Math.floor(monthIndex / 12), monthIndex % 12 + 1);
-  });
+  timeline.addEventListener("input", () => setCursor(timeline.valueAsNumber));
   $("#h-month").innerHTML = MONTHS.map((m, i) => `<option value="${i + 1}">${m}</option>`).join("");
   $("#h-year").innerHTML = $("#f-year").innerHTML;
   $("#h-year").addEventListener("change", (e) => setYM(+e.target.value, state.month));
@@ -150,30 +153,79 @@ function buildFilters() {
 function syncFilters() {
   $("#f-year").value = String(state.year);
   $("#f-month").value = String(state.month);
-  const timeline = $("#f-timeline");
-  const date = `${MONTHS_LONG[state.month - 1]} ${state.year}`;
-  timeline.value = ym(state);
-  timeline.setAttribute("aria-valuetext", date);
-  $("#f-date-label").textContent = date;
+  syncTimeline();
   $("#h-year").value = String(state.year);
   $("#h-month").value = String(state.month);
 }
 
+/* The timeline cursor is a month index across both eras. Up to the last month of
+   FIRMS data it means "show the detections"; past it, "show the forecast". */
+const cursorDate = (cursor) => ({ year: Math.floor((cursor - 1) / 12), month: (cursor - 1) % 12 + 1 });
+const isForecast = (cursor) => state.observedMax != null && cursor > state.observedMax;
+
+function syncTimeline() {
+  const timeline = $("#f-timeline");
+  const wrap = timeline.closest(".timeline");
+  if (!wrap || state.observedMax == null) return;
+  state.cursor ??= ym(state);
+  const { year, month } = cursorDate(state.cursor);
+  const date = `${MONTHS_LONG[month - 1]} ${year}`;
+  const forecast = isForecast(state.cursor);
+  timeline.value = state.cursor;
+  timeline.setAttribute("aria-valuetext", `${date}, ${forecast ? "forecast" : "satellite detections"}`);
+  $("#f-date-label").textContent = date;
+  wrap.dataset.mode = forecast ? "forecast" : "observed";
+}
+
+function paintTimeline() {
+  const track = $("#f-track");
+  if (!track || state.timelineMax == null) return;
+  const span = state.timelineMax - state.timelineMin || 1;
+  const pct = (value) => `${((value - state.timelineMin) / span) * 100}%`;
+  track.style.setProperty("--split", pct(state.observedMax));
+}
+
+function setCursor(value) {
+  state.cursor = value;
+  // Keep year/month inside the observed range so the dashboard views stay valid.
+  const observed = cursorDate(Math.min(value, state.observedMax));
+  setYM(observed.year, observed.month);
+  if (route.page === "explorer") loadExplorerWatchlist();
+}
+
 function setYM(year, month) {
+  periodSelected = true;
   state.year = year;
   state.month = month;
   syncFilters();
-  if (activeSection("dashboard", "calendar")) {
-    renderTiles();
-    tsChart?.update("none");
-    renderCal();
-  }
-  if (activeSection("dashboard", "history")) renderHist();
-  if (activeSection("dashboard", "hotspots")) loadMap();
+  if (route.page !== "dashboard" || !ready) return;
+  loadDashboardSummary();
+  renderTiles();
+  tsChart?.update("none");
+  renderCal();
+  renderHist();
+  loadMap();
 }
 
 let scopeRequest = 0;
+let allRegionsSeries, previousScope;
+
+function switchDashboardScope(entering) {
+  ++scopeRequest;
+  if (entering) {
+    previousScope = { scope: state.scope, series: state.series };
+    state.scope = "All";
+    state.series = allRegionsSeries;
+  } else {
+    Object.assign(state, previousScope);
+    previousScope = null;
+  }
+  $("#f-scope").value = state.scope;
+  setStatus("");
+}
+
 async function changeScope(scope) {
+  if (route.page === "dashboard") return;
   const request = ++scopeRequest;
   setStatus("Loading…");
   try {
@@ -189,6 +241,33 @@ async function changeScope(scope) {
   state.scope = scope;
   setStatus("");
   renderView();
+}
+
+let dashboardModule, periodSelected = false;
+
+function loadDashboardSummary(jumpTarget = null) {
+  const latest = state.series.at(-1);
+  if (!periodSelected && latest) {
+    periodSelected = true;
+    state.year = latest.year;
+    state.month = latest.month;
+    syncFilters();
+  }
+  dashboardModule ??= import("./dashboard.js?v=watchlist-add").catch(() => {
+    dashboardModule = null;
+    if (route.page === "dashboard") setStatus("The dashboard summary could not load.", true);
+  });
+  dashboardModule.then(async (module) => {
+    if (!module || route.page !== "dashboard") return;
+    await module.renderDashboard({
+      series: state.series, regions: state.regions, scope: state.scope,
+      year: state.year, month: state.month, getJSON, setMonth: (month) => setYM(state.year, month),
+      isVisible: () => route.page === "dashboard", tokens: tokens(), chartTooltip,
+    });
+    if (jumpTarget && route.page === "dashboard" && route.panel === jumpTarget.dataset.dashboardPanel) {
+      jumpToDashboardPanel(jumpTarget);
+    }
+  });
 }
 
 /* ---------- KPI tiles ---------- */
@@ -426,7 +505,7 @@ function initMap() {
   fitMap();
   // re-bin when zooming changes the sensible cell size
   map.on("zoomend", () => {
-    if (activeSection("dashboard", "hotspots") && cellFor(map.getZoom()) !== lastCell) loadMap();
+    if (route.page === "dashboard" && cellFor(map.getZoom()) !== lastCell) loadMap();
   });
 }
 // grid cell (degrees) that stays a few pixels wide at the current zoom
@@ -651,13 +730,126 @@ function prepAdvice() {
   if (countries.has("Malaysia")) sources.push("Malaysia: APIMS");
   if (countries.has("Indonesia")) sources.push("Indonesia: ISPU");
   sources.push("Singapore: NEA PSI");
+  const airLinks = [];
+  if (countries.has("Malaysia")) airLinks.push(
+    { kind: "live", label: "APIMS – official Air Pollutant Index", source: "Malaysia DOE", href: "https://eqms.doe.gov.my/APIMS/main" },
+    { kind: "news", label: "Why your AQI app says 250 when the official API is 175", source: "Malay Mail · 8 Oct 2026", href: "https://www.malaymail.com/news/malaysia/2026/10/08/hazy-math-doe-explains-why-your-aqi-says-250-when-the-official-api-is-175/238237" });
+  if (countries.has("Indonesia")) airLinks.push(
+    { kind: "live", label: "ISPU – Indeks Standar Pencemar Udara", source: "Indonesia KLH", href: "https://ispu.kemenlh.go.id" },
+    { kind: "news", label: "KLH: 17 areas reach the hazardous ISPU category", source: "Metro TV · 22 Oct 2026", href: "https://www.metrotvnews.com/read/KXyCmpdl-klh-udara-17-wilayah-kategori-berbahaya-ispu-tembus-1-299" });
+  airLinks.push({ kind: "live", label: "Haze updates and PSI readings", source: "Singapore NEA", href: "https://www.haze.gov.sg" });
   return [
-    `Follow official air-quality readings (${sources.join("; ")}) and set alerts.`,
-    "Stock well-fitting N95/KN95 masks. Surgical masks do little against fine smoke particles.",
-    "People with asthma, heart or lung conditions: check medication and an action plan with a doctor.",
-    "Schools and parents: plan indoor activities and keep a clean-air room (windows shut, air purifier).",
+    { tone: "air", icon: PREP_ICONS.air, title: "Watch the air",
+      text: `Follow official air-quality readings (${sources.join("; ")}) and set alerts.`,
+      facts: [
+        "Use the official index for your country. Phone apps often show an international AQI, which uses a different scale and can read much higher for the same air.",
+        "Malaysia's API and Indonesia's ISPU share the same bands: 0–50 good, 51–100 moderate, 101–200 unhealthy, 201–300 very unhealthy, above 300 hazardous.",
+        "Smoke can drift across borders within days, so check readings even when fires are far away.",
+      ],
+      links: airLinks },
+    { tone: "mask", icon: PREP_ICONS.mask, title: "Get the right mask",
+      text: "Stock well-fitting N95/KN95 masks. Surgical masks do little against fine smoke particles.",
+      facts: [
+        "A mask only protects if it seals over both nose and mouth. A loose N95 lets smoke leak in around the edges.",
+        "Short trips, such as home to school or work, usually don't need an N95. Long or hard outdoor activity in unhealthy air does.",
+        "People with severe heart or lung problems should ask a doctor before wearing an N95, because it makes breathing harder.",
+      ],
+      links: [
+        { kind: "guide", label: "How to protect yourself against the haze", source: "HealthHub Singapore", href: "https://www.healthhub.sg/live-healthy/how-to-protect-yourself-against-haze" },
+        { kind: "guide", label: "Public health advice during wildfires", source: "WHO Europe", href: "https://www.who.int/europe/news-room/questions-and-answers/item/public-health-advice-during-the-wildfires--how-to-protect-your-health-and-keep-safe" },
+        { kind: "news", label: "Singapore agencies step up haze measures", source: "NEA · Aug 2026", href: "https://www.nea.gov.sg/media/news/news/index/singapore-government-agencies-implement-measures-to-mitigate-impact-of-haze-Aug2026" },
+      ] },
+    { tone: "health", icon: PREP_ICONS.health, title: "Check your health plan",
+      text: "People with asthma, heart or lung conditions: check medication and an action plan with a doctor.",
+      facts: [
+        "Most at risk: babies and young children, older people, pregnant women, and anyone with heart or lung disease.",
+        "Keep enough medication at home for a hazy spell, and know when to use your reliever or action plan.",
+        "Get medical help quickly for trouble breathing, chest pain or wheezing that does not settle.",
+      ],
+      links: [
+        { kind: "news", label: "Wildfire smoke poses a hidden health threat", source: "UN News · Jul 2026", href: "https://news.un.org/en/story/2026/07/1168060" },
+        { kind: "guide", label: "Who is most at risk, and what to do", source: "WHO Europe", href: "https://www.who.int/europe/news-room/questions-and-answers/item/public-health-advice-during-the-wildfires--how-to-protect-your-health-and-keep-safe" },
+      ] },
+    { tone: "home", icon: PREP_ICONS.home, title: "Make a clean-air room",
+      text: "Schools and parents: plan indoor activities and keep a clean-air room (windows shut, air purifier).",
+      facts: [
+        "Pick a room everyone fits in, ideally with a bathroom nearby. Close its windows and doors, but keep it easy to leave.",
+        "Run a portable HEPA air cleaner, or set the air-conditioner to recirculate.",
+        "Don't add smoke indoors: no candles, incense, smoking or frying. Clean with a damp cloth so dust doesn't fly back up.",
+        "Air the room out once the outdoor readings improve.",
+      ],
+      links: [
+        { kind: "guide", label: "Create a clean room during wildfire smoke", source: "US EPA", href: "https://www.epa.gov/indoor-air-quality-iaq/create-clean-room-protect-indoor-air-quality-during-wildfire" },
+        { kind: "guide", label: "Clean room infographic (printable)", source: "US EPA", href: "https://www.epa.gov/emergencies-iaq/create-clean-room-during-wildfire-infographic" },
+        { kind: "guide", label: "Haze guidelines for workplaces", source: "Singapore MOM", href: "https://www.mom.gov.sg/haze" },
+      ] },
   ];
 }
+const PREP_KIND = { live: "Live data", guide: "Guide", news: "News" };
+const prepOpen = new Set();
+
+/* ---- live headlines: /api/news (backend fetches Google News, cached ~2 h) ----
+   The built-in News links above are the fallback; when the backend has newer
+   headlines they replace them. Re-checked every 30 minutes while the page is open. */
+const NEWS_TTL = 30 * 60 * 1000;
+const newsCache = new Map();
+function liveNews(topic, countries) {
+  const key = topic + "|" + countries.join(",");
+  const hit = newsCache.get(key);
+  if (hit && Date.now() - hit.t < NEWS_TTL) return hit.p;
+  const p = getJSON("/news?" + new URLSearchParams({ topic, countries: countries.join(","), limit: 3 }))
+    .catch(() => { newsCache.delete(key); return { items: [] }; });
+  newsCache.set(key, { t: Date.now(), p });
+  return p;
+}
+const newsDay = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" });
+function newsWhen(iso) {
+  const d = new Date(iso), days = Math.floor((Date.now() - d) / 864e5);
+  return days <= 0 ? "Today" : days === 1 ? "Yesterday" : days < 7 ? days + " days ago" : newsDay.format(d);
+}
+function scopeCountries() {
+  const regs = scopeRegionNames();
+  return [...new Set(state.regions.filter((r) => regs.includes(r.region)).map((r) => r.country))].sort();
+}
+let prepNewsToken = 0;
+function updatePrepNews() {
+  const token = ++prepNewsToken, countries = scopeCountries();
+  for (const tone of ["air", "mask", "health", "home"]) {
+    liveNews(tone, countries).then((d) => {
+      const ul = $("#prep-links-" + tone);
+      if (token !== prepNewsToken || !ul || !d.items?.length) return;
+      ul.querySelectorAll('li[data-kind="news"]').forEach((li) => li.remove());
+      ul.insertAdjacentHTML("afterbegin", d.items.map((n) => `<li data-kind="news"><a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer">
+          <span class="prep-kind prep-kind-news">News · ${esc(newsWhen(n.published))}</span>
+          <span class="prep-link-text">${esc(n.title)}<small>${esc(n.source || "News")}</small></span>
+          <span class="prep-ext" aria-hidden="true">↗</span><span class="sr-only">(opens in a new tab)</span></a></li>`).join(""));
+      const head = $("#prep-src-" + tone);
+      if (head) head.innerHTML = `Read more <span class="prep-live"><i aria-hidden="true"></i>Latest news, updated automatically</span>`;
+    });
+  }
+}
+setInterval(() => { if (route.page === "haze") updatePrepNews(); }, NEWS_TTL);
+
+// Small cartoon icons for the haze kit cards (48×48, inline SVG, decorative).
+const PREP_ICONS = {
+  air: `<svg viewBox="0 0 48 48"><rect x="12" y="5" width="22" height="38" rx="5" fill="#fff" stroke="currentColor" stroke-width="2.5"/>
+    <path d="M17 27a6 6 0 0 1 12 0" fill="none" stroke="#22c55e" stroke-width="3" stroke-linecap="round"/>
+    <path d="M23 27l3-4" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><circle cx="23" cy="27" r="1.8" fill="currentColor"/>
+    <rect x="18" y="34" width="10" height="3" rx="1.5" fill="currentColor" opacity=".35"/>
+    <g class="prep-ring"><path d="M36 9a5 5 0 0 1 5 5v4l2 3H31l2-3v-4a5 5 0 0 1 3-5z" fill="#facc15" stroke="#b45309" stroke-width="1.6"/><circle cx="37" cy="23" r="1.8" fill="#b45309"/></g></svg>`,
+  mask: `<svg viewBox="0 0 48 48"><path d="M6 20c-3 0-3 9 3 10M42 20c3 0 3 9-3 10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+    <path d="M8 18q16-8 32 0l-2 14q-14 9-28 0z" fill="#fff" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M13 23q11-4 22 0M13 28q11-4 22 0" fill="none" stroke="currentColor" stroke-width="1.6" opacity=".45"/>
+    <text x="24" y="40" text-anchor="middle" font-size="7" font-weight="700" fill="currentColor" font-family="sans-serif">N95</text></svg>`,
+  health: `<svg viewBox="0 0 48 48"><path class="prep-beat" d="M24 41S6 30 6 17a9 9 0 0 1 18-3 9 9 0 0 1 18 3c0 13-18 24-18 24z" fill="#fda4af" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M10 23h8l3-6 4 11 3-5h10" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  home: `<svg viewBox="0 0 48 48"><path d="M6 22L24 7l18 15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M10 20v21h28V20" fill="#fff" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/>
+    <rect x="17" y="26" width="14" height="13" rx="2.5" fill="#ddd6fe" stroke="currentColor" stroke-width="2"/>
+    <g class="prep-fan"><path d="M24 32.5l0-4.5M24 32.5l3.9 2.2M24 32.5l-3.9 2.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></g>
+    <circle cx="24" cy="32.5" r="1.3" fill="currentColor"/>
+    <path class="prep-breeze" d="M34 12q4-2 6 1M36 16q4-2 7 1" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round"/></svg>`,
+};
 
 function renderHaze() {
   const lv = seasonLevels();
@@ -667,7 +859,37 @@ function renderHaze() {
   const mid = lv.map((l, i) => (l === "mid" ? i : -1)).filter((i) => i >= 0);
   $("#season-line").innerHTML = `<b>High-risk months:</b> ${esc(listMonths(hi) || "none")}.` +
     (mid.length ? ` Lighter shading marks above-average months (${esc(listMonths(mid))}).` : "");
-  $("#prep-list").innerHTML = prepAdvice().map((s) => `<li>${esc(s)}</li>`).join("");
+  const list = $("#prep-list");
+  list.innerHTML = prepAdvice().map((tip, i) => {
+    const open = prepOpen.has(tip.tone);
+    return `<li class="prep-card prep-${tip.tone}" style="--i:${i}">
+      <span class="prep-icon" aria-hidden="true">${tip.icon}</span>
+      <span class="prep-step" aria-hidden="true">${i + 1}</span>
+      <b>${esc(tip.title)}</b><span class="prep-text">${esc(tip.text)}</span>
+      <button type="button" class="prep-more-btn" data-tone="${tip.tone}" aria-expanded="${open}" aria-controls="prep-more-${tip.tone}">
+        <span>${open ? "Show less" : "Learn more"}</span><i aria-hidden="true">â–¾</i></button>
+      <div class="prep-more" id="prep-more-${tip.tone}"${open ? "" : " hidden"}>
+        <ul class="prep-facts">${tip.facts.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>
+        <p class="prep-src-h" id="prep-src-${tip.tone}">Read more</p>
+        <ul class="prep-links" id="prep-links-${tip.tone}">${tip.links.map((l) => `<li data-kind="${l.kind}"><a href="${l.href}" target="_blank" rel="noopener noreferrer">
+          <span class="prep-kind prep-kind-${l.kind}">${PREP_KIND[l.kind]}</span>
+          <span class="prep-link-text">${esc(l.label)}<small>${esc(l.source)}</small></span>
+          <span class="prep-ext" aria-hidden="true">↗</span><span class="sr-only">(opens in a new tab)</span></a></li>`).join("")}</ul>
+      </div></li>`;
+  }).join("");
+  updatePrepNews();
+  if (!list.dataset.bound) {
+    list.dataset.bound = "1";
+    list.addEventListener("click", (e) => {
+      const btn = e.target.closest(".prep-more-btn");
+      if (!btn) return;
+      const open = btn.getAttribute("aria-expanded") !== "true";
+      btn.setAttribute("aria-expanded", String(open));
+      btn.querySelector("span").textContent = open ? "Show less" : "Learn more";
+      $("#prep-more-" + btn.dataset.tone).hidden = !open;
+      if (open) prepOpen.add(btn.dataset.tone); else prepOpen.delete(btn.dataset.tone);
+    });
+  }
   renderOutlookChips();
 }
 
@@ -962,22 +1184,22 @@ function whereEvents() {
 }
 
 /* ---------- fire watch overview ---------- */
+const ensoFor = (year) =>
+  (state.oni?.available && state.oni.latest_year >= year ? "observed" : "0");
+
 function firstForecastPeriod(lastObserved) {
-  const index = ym(lastObserved);
-  const year = Math.floor(index / 12);
-  const month = index % 12 + 1;
-  const enso = state.oni?.available && state.oni.latest_year >= year ? "observed" : "0";
-  return { year, month, enso };
+  const { year, month } = cursorDate(ym(lastObserved) + 1);
+  return { year, month, enso: ensoFor(year) };
 }
 
 function loadOverview() {
   const observed = state.series.at(-1);
   if (!observed) return;
   const outlook = firstForecastPeriod(observed);
-  import("./overview.js?v=satellite-forecast").then(({ renderOverview }) => {
+  import("./overview.js?v=world-cell-forecast").then(({ renderOverview }) => {
     if (route.page === "home") {
-      renderOverview({ observed, outlook, getJSON, scope: state.scope, openExplorer(year, month) {
-        setYM(year, month);
+      renderOverview({ observed, outlook, getJSON, scope: state.scope, regions: state.regions, openExplorer(year, month) {
+        setCursor(ym({ year, month }));
         location.hash = "/explorer";
       } });
     }
@@ -990,19 +1212,20 @@ function loadOverview() {
 function loadExplorerWatchlist() {
   const latest = state.series.at(-1);
   if (!latest) return;
-  const outlook = firstForecastPeriod(latest);
-  import("./overview.js?v=satellite-forecast").then(({ renderExplorerWatchlist }) => {
+  // The timeline decides the era: past the last observed month it is a forecast
+  // month, otherwise the watchlist keeps showing the nearest forecast period.
+  const forecast = isForecast(state.cursor ?? ym(state));
+  const picked = cursorDate(state.cursor ?? ym(state));
+  const outlook = forecast
+    ? { year: picked.year, month: picked.month, enso: ensoFor(picked.year) }
+    : firstForecastPeriod(latest);
+  import("./overview.js?v=world-cell-forecast").then(({ renderExplorerWatchlist }) => {
     if (route.page !== "explorer") return;
     renderExplorerWatchlist({
-      outlook, getJSON, regions: state.regions, escape: esc,
-      onPlace(scope) {
-        const control = $("#f-scope");
-        if (control.value === scope) return;
-        control.value = scope;
-        changeScope(scope);
-      },
-      updateTerrain(place, forecast) {
-        terrainModule.then((module) => module?.updateExplorerView?.(place, forecast));
+      outlook, layer: forecast ? "forecast" : "observed",
+      getJSON, regions: state.regions, escape: esc,
+      updateTerrain(focus, forecast) {
+        terrainModule.then((module) => module?.updateExplorerView?.(focus, forecast));
       },
     });
   }).catch(() => { $("#explorer-watch-status").textContent = "The place watchlist could not load."; });
@@ -1019,9 +1242,8 @@ const pages = {
   docs: "Docs",
 };
 const sections = {
-  dashboard: ["calendar", "hotspots", "history"],
-  data: ["sources", "methods", "calibration"],
-  docs: ["catalogue", "climate", "skill", "files", "reproduce"],
+  data: ["sources", "methods", "calibration", "world"],
+  docs: ["key", "catalogue", "climate", "world", "skill", "limits", "files", "reproduce"],
 };
 let route = { page: "home" };
 let ready = false;
@@ -1031,38 +1253,109 @@ function activeSection(page, section) {
   return route.page === page && route.section === section;
 }
 
+const dashboardNav = $(".dashboard-nav");
+const dashboardLinks = new Map([...dashboardNav.querySelectorAll("a")].map((link) => [
+  new URLSearchParams(link.hash.split("?")[1]).get("panel"), link,
+]));
+const dashboardPanels = [...document.querySelectorAll("[data-dashboard-panel]")];
+
+function dashboardPanel(name) {
+  return dashboardPanels.find((panel) => panel.dataset.dashboardPanel === name);
+}
+
+function highlightDashboardSection(name) {
+  const link = dashboardLinks.get(name);
+  const previous = dashboardNav.querySelector("[aria-current]");
+  if (link === previous) return;
+  previous?.removeAttribute("aria-current");
+  link.setAttribute("aria-current", "location");
+
+  if (dashboardNav.scrollWidth > dashboardNav.clientWidth) {
+    const nav = dashboardNav.getBoundingClientRect();
+    const item = link.getBoundingClientRect();
+    const offset = item.left < nav.left ? item.left - nav.left : Math.max(0, item.right - nav.right);
+    if (offset) dashboardNav.scrollBy({ left: offset, behavior: "instant" });
+  }
+}
+
+let dashboardScrollFrame = 0;
+function trackDashboardScroll() {
+  if (route.page !== "dashboard" || dashboardScrollFrame) return;
+  dashboardScrollFrame = requestAnimationFrame(() => {
+    dashboardScrollFrame = 0;
+    if (route.page !== "dashboard") return;
+
+    const readingLine = parseFloat(getComputedStyle(dashboardPanels[0]).scrollMarginTop) + 16;
+    let activePanel = null;
+    for (const panel of dashboardPanels) {
+      if (panel.getBoundingClientRect().top > readingLine) break;
+      activePanel = panel;
+    }
+
+    // The last section may be too short to reach the reading line.
+    const page = document.scrollingElement;
+    if (page.scrollTop > 0 && page.scrollTop + page.clientHeight >= page.scrollHeight - 2) {
+      activePanel = dashboardPanels.at(-1);
+    }
+    highlightDashboardSection(activePanel?.dataset.dashboardPanel ?? null);
+  });
+}
+
+function jumpToDashboardPanel(panel, animate = false) {
+  const behavior = animate && !matchMedia("(prefers-reduced-motion: reduce)").matches ? "smooth" : "instant";
+  panel.scrollIntoView({ block: "start", behavior });
+  const heading = panel.querySelector("h2");
+  heading.tabIndex = -1;
+  heading.focus({ preventScroll: true });
+}
+
 function updateRoute(moveFocus = false) {
   const [path, query] = location.hash.slice(1).split("?");
   const name = path.startsWith("/") ? path.slice(1) : "";
   const pageName = name === "explore" ? "dashboard" : name;
   const page = Object.hasOwn(pages, pageName) ? pageName : "home";
   const options = sections[page] || [];
-  const requested = new URLSearchParams(query).get("section");
+  const params = new URLSearchParams(query);
+  const requested = params.get("section");
   const section = options.includes(requested) ? requested : options[0];
   const changedPage = route.page !== page;
   const changedSection = route.section !== section;
-  route = { page, section };
+  if (ready && changedPage && (page === "dashboard" || route.page === "dashboard")) {
+    switchDashboardScope(page === "dashboard");
+  }
+  const legacyPanel = ["calendar", "hotspots", "history"].includes(requested) ? requested : null;
+  const jumpTarget = page === "dashboard" ? dashboardPanel(params.get("panel") ?? legacyPanel) : null;
+  const panel = jumpTarget?.dataset.dashboardPanel ?? null;
+  const changedPanel = (route.panel ?? null) !== panel;
+  route = { page, section, panel };
   if (page !== "explorer") $("#place-search-dialog").close();
-  document.title = pages[page] + " · BuriningView";
+  document.title = pages[page] + " · BurningView";
   document.body.classList.toggle("map-page", page === "explorer");
+  document.body.classList.toggle("dashboard-page", page === "dashboard");
 
   document.querySelectorAll("[data-page]").forEach((view) => { view.hidden = view.dataset.page !== page; });
   const view = document.querySelector('[data-page="' + page + '"]');
-  view.querySelectorAll("[data-section]").forEach((panel) => { panel.hidden = panel.dataset.section !== section; });
+  view.querySelectorAll("[data-section]").forEach((sectionView) => { sectionView.hidden = sectionView.dataset.section !== section; });
   document.querySelectorAll("[data-nav]").forEach((link) => {
     if (link.dataset.nav === page) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
-  view.querySelectorAll(".section-nav a").forEach((link) => {
-    if (new URLSearchParams(link.hash.split("?")[1]).get("section") === section) link.setAttribute("aria-current", "page");
-    else link.removeAttribute("aria-current");
-  });
+  if (page === "dashboard") {
+    highlightDashboardSection(panel);
+  } else {
+    view.querySelectorAll(".section-nav a").forEach((link) => {
+      const linkParams = new URLSearchParams(link.hash.split("?")[1]);
+      if (linkParams.get("section") === section) link.setAttribute("aria-current", "page");
+      else link.removeAttribute("aria-current");
+    });
+  }
 
   const filters = $("#filters");
   const slot = view.querySelector("[data-filters]");
   filters.hidden = !slot;
   if (slot && filters.parentElement !== slot) slot.append(filters);
-  const observed = page === "dashboard" && section !== "history";
+  const observed = page === "dashboard";
+  $("#f-scope").closest("label").hidden = observed;
   const forecast = page === "forecast" || page === "haze";
   filters.querySelector("[data-timeline-filter]").hidden = page !== "explorer";
   filters.querySelectorAll("[data-observed-filter]").forEach((label) => { label.hidden = !observed; });
@@ -1070,11 +1363,17 @@ function updateRoute(moveFocus = false) {
   $("#status").hidden = (page === "data" && section !== "calibration") || page === "docs";
   hideTip();
 
-  if (moveFocus && (changedPage || (changedSection && !document.activeElement.closest(".section-nav")))) {
+  const changedView = changedPage || changedSection;
+  if (jumpTarget) {
+    if (changedPage || changedPanel) jumpToDashboardPanel(jumpTarget, moveFocus && !changedPage);
+  } else if (moveFocus && (changedPage || (page === "dashboard" && (changedSection || changedPanel))
+    || (changedSection && !document.activeElement.closest(".section-nav")))) {
     window.scrollTo(0, 0);
-    view.querySelector("h1").focus({ preventScroll: true });
+    if (changedPage || !document.activeElement.closest(".section-nav")) {
+      view.querySelector("h1").focus({ preventScroll: true });
+    }
   }
-  if (ready && (changedPage || changedSection)) renderView();
+  if (ready && changedView) renderView(jumpTarget);
 }
 
 function renderDocToc() {
@@ -1091,29 +1390,29 @@ function renderDocToc() {
   }));
 }
 
-function renderView() {
+function renderView(jumpTarget = dashboardPanel(route.panel)) {
   switch (route.page) {
     case "home":
       loadOverview();
       break;
     case "explorer":
-      terrainModule ??= import("./hero3d.js?v=forecast-flames").catch(() => { $("#hero-status").textContent = "3D view could not load"; });
+      terrainModule ??= import("./hero3d.js?v=world-cell-forecast").catch(() => { $("#hero-status").textContent = "3D view could not load"; });
       loadExplorerWatchlist();
       break;
-    case "dashboard":
-      if (route.section === "calendar") {
-        renderTiles();
-        renderCal();
-        renderTS();
-      } else if (route.section === "history") {
-        renderHist();
-      } else {
-        if (!map) initMap();
-        map.invalidateSize({ pan: false });
-        fitMap();
-        loadMap();
-      }
+    case "dashboard": {
+      const through = state.series.at(-1);
+      $("#dashboard-coverage").textContent = through ? `Data through ${MONTHS_LONG[through.month - 1]} ${through.year}` : "";
+      loadDashboardSummary(jumpTarget);
+      renderTiles();
+      renderCal();
+      renderTS();
+      renderHist();
+      if (!map) initMap();
+      map.invalidateSize({ pan: false });
+      fitMap();
+      loadMap();
       break;
+    }
     case "forecast":
       if (!fcMap) initFcMap();
       fcMap.invalidateSize({ pan: false });
@@ -1125,6 +1424,9 @@ function renderView() {
       break;
     case "data":
       if (route.section === "calibration") renderCalib();
+      if (route.section === "world") {
+        import("./world-map.js?v=watchlist-add").then((m) => m.renderWorldMap()).catch(() => {});
+      }
       break;
     case "docs":
       renderDocToc();
@@ -1141,7 +1443,7 @@ async function boot() {
     ]);
     state.regions = regions;
     state.calib = calib;
-    state.series = h.series;
+    state.series = allRegionsSeries = h.series;
     state.oni = oni;
   } catch (e) {
     setStatus(`Could not reach the API: ${e.message}`, true);
@@ -1173,12 +1475,25 @@ async function boot() {
   cal.addEventListener("focusout", hideTip);
 
   ready = true;
-  renderView();
+  if (route.page === "dashboard") switchDashboardScope(true);
+  renderView(dashboardPanel(route.panel));
 }
 
 $(".skip").addEventListener("click", (event) => {
   event.preventDefault();
   $("#main").focus();
+});
+window.addEventListener("scroll", trackDashboardScroll, { passive: true });
+window.addEventListener("resize", trackDashboardScroll);
+new ResizeObserver(trackDashboardScroll).observe($(".dashboard-content"));
+
+dashboardNav.addEventListener("click", (event) => {
+  const link = event.target.closest("a");
+  if (!link || link.hash !== location.hash || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  const panel = dashboardPanel(route.panel);
+  if (panel) jumpToDashboardPanel(panel, true);
+  else window.scrollTo(0, 0);
 });
 window.addEventListener("hashchange", () => updateRoute(true));
 updateRoute();

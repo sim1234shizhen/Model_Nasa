@@ -3,6 +3,7 @@ Model_Nasa/
 
 # Keep newly generated datasets local. Rebuild with Clean.py, see README.
 *.csv
+!/Clean_dataset/world_monthly.csv
 /data/
 
 # Python / tooling

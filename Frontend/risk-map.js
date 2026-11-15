@@ -1,4 +1,4 @@
-import { createFlames } from "./fire-flames.js?v=forecast-flames";
+import { createFlames } from "./fire-flames.js?v=animated-country-flames";
 /* Explorer forecast map: fire risk as a smoothed layer over a basemap.
    - The forecast grid (one chance per ~28 km cell and month) is smoothed into a continuous field and coloured,
      so risk reads as glowing areas instead of a mosaic of squares. Hovering still reports the cell's own value.
@@ -10,10 +10,16 @@ import { explorerCamera, frameExplorerMap, satelliteStyle } from "./satellite-ma
 
 const ML = "https://unpkg.com/maplibre-gl@5.24.1/dist/";
 const PX = 10;            // canvas pixels per grid cell
+/* A flame is only drawn once a cell has a real chance of burning. Below this the
+   cell stays in the data and stays coloured on the heat map, it just gets no fire
+   icon - otherwise a typical month paints a flame on nearly every cell. */
+const FLAME_MIN = 30;
+const chanceBand = (chance) => chance >= 70 ? 2 : chance >= 45 ? 1 : 0;
 const PAD = 3;            // empty cells around the grid so the mist can fade out
 const MONTHS_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const EMPTY = { type: "FeatureCollection", features: [] };
+const nf = new Intl.NumberFormat("en");
 
 let library;
 export function loadMapLibre() {
@@ -61,7 +67,18 @@ export async function createRiskMap(host, opts = {}) {
   Object.assign(style.sources, {
     area: { type: "geojson", data: EMPTY },
     cell: { type: "geojson", data: EMPTY },
+    "world-outlook-points": { type: "geojson", data: EMPTY },
   });
+  const countryLine = style.layers.findIndex(({ id }) => id === "country-line");
+  style.layers.splice(countryLine, 0,
+    { id: "world-outlook", type: "fill", source: "countries", paint: {
+      "fill-color": "transparent", "fill-outline-color": "transparent",
+    } },
+    { id: "world-outlook-points", type: "circle", source: "world-outlook-points", paint: {
+      "circle-radius": ["interpolate", ["linear"], ["get", "activity"], 0, 8, 1, 14],
+      "circle-color": "#f18436", "circle-opacity": 0.85,
+    } },
+  );
   style.layers.push(
     { id: "area-fill", type: "fill", source: "area", paint: { "fill-color": "#ffffff", "fill-opacity": 0.1 } },
     { id: "area-line", type: "line", source: "area", paint: { "line-color": "#ffe9a8", "line-width": 1.6, "line-opacity": 0.95 } },
@@ -82,17 +99,23 @@ export async function createRiskMap(host, opts = {}) {
   }
 
   let flames;
+  let hiddenBands = [false, false, false];
   try {
     flames = createFlames(map, {
       reduced,
-      classify: (chance) => chance >= 70 ? 2 : chance >= 35 ? 1 : 0,
+      classify: (chance) => chance >= 70 ? 2 : chance >= 45 ? 1 : 0,
       heightValue: (chance) => chance / 5,
+      // FLAME_MIN draws as a small ember, 80%+ as a full flame
+      sizeValue: (chance) => 0.42 + 0.58 * Math.min(1, Math.max(0, (chance - FLAME_MIN) / (80 - FLAME_MIN))),
     });
+    flames?.setHidden(hiddenBands);
   } catch (error) {
     host.querySelector(".fire-flames")?.remove();
     console.warn("[forecast flames]", error);
   }
   let showFlames = Boolean(flames);
+  // Keep the circle layer available for hover and as a fallback without the animation canvas.
+  if (flames) map.setPaintProperty("world-outlook-points", "circle-opacity", 0);
 
   const tip = document.createElement("div"); tip.className = "rk-tip"; tip.hidden = true; host.appendChild(tip);
 
@@ -104,6 +127,46 @@ export async function createRiskMap(host, opts = {}) {
   const canvas = document.createElement("canvas"), ctx = canvas.getContext("2d");
   let img = null, tmp = null;
   let autoFrame = true;
+  let seasonalData, seasonalMonth, seasonalYear, cityMarker;
+  const seasonalPlaces = new Map();
+
+  function showWorld(outlook, selectedMonth, selectedYear) {
+    if (outlook === seasonalData && selectedMonth === seasonalMonth && selectedYear === seasonalYear) return;
+    seasonalData = outlook;
+    seasonalMonth = selectedMonth;
+    seasonalYear = selectedYear;
+    seasonalPlaces.clear();
+    const points = [], markers = [];
+    for (const entry of outlook?.countries ?? []) {
+      const estimate = entry.months[selectedMonth];
+      if (!estimate) continue;
+      const [high, activity] = estimate;
+      const values = {
+        name: entry.country, high, activity,
+        peak: entry.peak?.[selectedMonth] ?? 0,
+        expected: entry.expected?.[selectedMonth] ?? 0,
+      };
+      seasonalPlaces.set(entry.country, values);
+      for (const name of entry.shapes) seasonalPlaces.set(name, values);
+      // This pin represents the country's total, so use its map center.
+      if (high > 0 && entry.center) {
+        markers.push([...entry.center, activity]);
+        points.push({
+          type: "Feature", properties: values,
+          geometry: { type: "Point", coordinates: entry.center },
+        });
+      }
+    }
+    map.getSource("world-outlook-points").setData({ type: "FeatureCollection", features: points });
+    flames?.setCountryMarkers(markers);
+    tip.hidden = true;
+  }
+
+  function showGlobe() {
+    autoFrame = false;
+    map.flyTo({ center: [map.getCenter().lng, 6], zoom: 1.4, pitch: 0, bearing: 0, duration: reduced ? 0 : 1000 });
+  }
+
 
   // ---- draw one field (chance per cell) onto the canvas ----
   function paint(vals) {
@@ -181,7 +244,7 @@ export async function createRiskMap(host, opts = {}) {
     pins.forEach((p) => p.remove()); pins = [];
     if (!data) return;
     const mo = data.months[month - 1];
-    mo.top_areas.slice(0, 5).forEach((a, rank) => {
+    mo.top_areas.filter((a) => !hiddenBands[chanceBand(a.max_chance_pct)]).slice(0, 5).forEach((a, rank) => {
       const ai = data.areas.indexOf(a.area);
       let sx = 0, sy = 0, sw = 0;
       for (const [la, lo, pct, , cai] of mo.cells) if (cai === ai) { const w = pct * pct; sx += (lo + cell / 2) * w; sy += (la + cell / 2) * w; sw += w; }
@@ -197,7 +260,10 @@ export async function createRiskMap(host, opts = {}) {
   function declutter() {
     const taken = [];
     for (const p of pins) {
-      const el = p.getElement(), pt = map.project(p.getLngLat()), w = el.offsetWidth || 120;
+      const el = p.getElement(), location = p.getLngLat();
+      el.hidden = map.getZoom() < 2.75 || Boolean(map.transform.isLocationOccluded?.(location));
+      if (el.hidden) continue;
+      const pt = map.project(location), w = el.offsetWidth || 120;
       let level = 0, box;
       for (; level < 5; level++) {
         const stem = 18 + level * 25;
@@ -242,15 +308,29 @@ export async function createRiskMap(host, opts = {}) {
 
   // ---- hover: the cell's own forecast, and its true outline ----
   function probe(e) {
-    if (!data) return;
     const c = Math.floor((e.lngLat.lng - lon0) / cell), r = Math.floor((e.lngLat.lat - lat0) / cell);
-    const hit = c >= 0 && c < cols && r >= 0 && r < rows ? info[month - 1].get(r * cols + c) : null;
-    if (!hit) { tip.hidden = true; map.getSource("cell").setData(EMPTY); map.getCanvas().style.cursor = ""; return; }
+    const hit = data && c >= 0 && c < cols && r >= 0 && r < rows ? info[month - 1]?.get(r * cols + c) : null;
+    if (!hit) {
+      map.getSource("cell").setData(EMPTY);
+      const feature = map.queryRenderedFeatures(e.point, { layers: ["world-outlook-points", "world-outlook"] })
+        .find((entry) => seasonalPlaces.has(entry.properties.name));
+      const country = seasonalPlaces.get(feature?.properties.name);
+      map.getCanvas().style.cursor = country ? "pointer" : "";
+      if (!country) { tip.hidden = true; return; }
+      tip.innerHTML = `<b>${esc(country.name)}</b> · ${MONTHS_LONG[seasonalMonth - 1]} ${seasonalYear}<br>`
+        + `${nf.format(country.high)} cells ≥50% · peak ${country.peak}%<span>Country model estimate · ${nf.format(country.expected)} fire cell-days expected</span>`;
+      positionTip(e);
+      return;
+    }
     const la = lat0 + r * cell, lo = lon0 + c * cell, [pct, fd10, ai] = hit;
     map.getSource("cell").setData({ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: square(la, lo) } });
     map.getCanvas().style.cursor = "crosshair";
     tip.innerHTML = `<b>${pct}% chance</b> of fire in ${MONTHS_LONG[month - 1]} ${data.year}<br>${esc(data.areas[ai])} · about ${(fd10 / 10).toFixed(1)} fire days expected` +
       `<span>This cell: ${Math.abs(la + cell / 2).toFixed(2)}°${la + cell / 2 >= 0 ? "N" : "S"}, ${(lo + cell / 2).toFixed(2)}°E · ${cell}° wide</span>`;
+    positionTip(e);
+  }
+
+  function positionTip(e) {
     tip.hidden = false;
     const w = host.clientWidth, h = host.clientHeight;
     tip.style.left = Math.max(6, Math.min(e.point.x + 14, w - 236)) + "px"; tip.style.top = Math.max(6, Math.min(e.point.y + 14, h - 96)) + "px";
@@ -262,7 +342,13 @@ export async function createRiskMap(host, opts = {}) {
   function drawForecast(animate) {
     if (!img) return;
     if (showFlames) {
-      const cells = data.months[month - 1].cells.map(([lat, lon, chance]) => [lon, lat, chance]);
+      // Only cells with a real chance get a flame. The API sends everything from 5%
+      // up, and in a typical month most of that is 10-30% - drawing a flame on each
+      // one covers the map and makes a 22% cell look like a severe one. The heat map
+      // mode still shows the full continuous field, including the low end.
+      const cells = data.months[month - 1].cells
+        .filter(([, , chance]) => chance >= FLAME_MIN)
+        .map(([lat, lon, chance]) => [lon, lat, chance]);
       flames.setCells(cells, cell);
     } else {
       blendTo(grids[month - 1], animate);
@@ -271,7 +357,18 @@ export async function createRiskMap(host, opts = {}) {
 
   return {
     // show a forecast and a month; a new forecast rebuilds the map, a new month blends the mist
+    showWorld,
+    showGlobe,
     show(d, m) {
+      if (!d) {
+        data = null;
+        pins.forEach((pin) => pin.remove());
+        pins = [];
+        flames?.setCells([], cell);
+        if (map.getLayer("mist")) map.removeLayer("mist");
+        if (map.getSource("mist")) map.removeSource("mist");
+        return;
+      }
       const fresh = d !== data;
       if (fresh) setData(d);
       if (!img) return;
@@ -283,10 +380,15 @@ export async function createRiskMap(host, opts = {}) {
     },
     get canShowFlames() { return Boolean(flames); },
     get showingFlames() { return showFlames; },
+    setHiddenBands(h) {
+      hiddenBands = h.slice();
+      flames?.setHidden(hiddenBands);
+      if (data) setPins();
+    },
     toggleFlames() {
       if (!flames) return;
       showFlames = !showFlames;
-      flames.setVisible(showFlames);
+      flames.setGridVisible(showFlames);
       if (map.getLayer("mist")) {
         map.setLayoutProperty("mist", "visibility", showFlames ? "none" : "visible");
       }
@@ -299,8 +401,21 @@ export async function createRiskMap(host, opts = {}) {
       drawForecast(false);
     },
     resetView,
-    setFocus(bounds) {
-      focus = bounds;
+    setFocus(target) {
+      focus = target;
+      const city = target?.city;
+      if (city) {
+        if (!cityMarker) {
+          const pin = document.createElement("div");
+          pin.className = "city-pin";
+          cityMarker = new maplibregl.Marker({ element: pin, anchor: "bottom" })
+            .setLngLat([city.lon, city.lat]).addTo(map);
+        }
+        cityMarker.setLngLat([city.lon, city.lat]).getElement().textContent = city.name;
+      } else if (cityMarker) {
+        cityMarker.remove();
+        cityMarker = null;
+      }
       resetView();
     },
     resize() { map.resize(); },

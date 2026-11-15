@@ -72,7 +72,8 @@
   function pageContext() {
     const page = (location.hash.replace(/^#\/?/, "").split("?")[0] || "home");
     const ctx = { page: { home: "overview", explore: "dashboard" }[page] || page };
-    const scope = val("f-scope"); if (scope) ctx.area_selected = scope;
+    const scope = page === "explorer" ? $("explorer-map-panel").dataset.mapScope : val("f-scope");
+    if (scope) ctx.area_selected = scope;
     if (page === "forecast") {
       const y = val("fc-year"); if (y) ctx.forecast_year_selected = y;
       const e = val("fc-enso"); if (e && e !== "observed") ctx.el_nino_scenario = e;
@@ -126,7 +127,22 @@
     get_forecast: "Reading the forecast", get_history: "Checking the record",
     get_risk_map: "Finding the hot spots", get_enso: "Checking El Niño",
     get_accuracy: "Checking the calibration", list_regions: "Listing regions",
+    focus_map: "Moving the map", get_world_country: "Reading the world record",
+    get_world_ranking: "Ranking countries by fire",
   };
+
+  /* The consultant resolved a place server-side; move the map to it. The explorer
+     owns the map, so switch to that page first if we are somewhere else. */
+  function moveMapTo(place) {
+    if (!place || !place.name) return;
+    const go = () => window.fireCalendarFocus && window.fireCalendarFocus(place);
+    if (go()) return;
+    if (location.hash.replace(/^#\/?/, "").split("?")[0] !== "explorer") location.hash = "/explorer";
+    let tries = 0;
+    const timer = setInterval(() => {
+      if (go() || ++tries > 40) clearInterval(timer);   // explorer needs its forecast first
+    }, 250);
+  }
 
   async function streamConsult(messages, context, onEvent, signal) {
     const res = await fetch(API + "/api/consult", {
@@ -215,10 +231,13 @@
 
     try {
       await streamConsult(history, pageContext(), (event, payload) => {
-        if (event === "tool") {
+        if (event === "focus") {
+          moveMapTo(payload);
+        } else if (event === "tool") {
           const chip = document.createElement("span");
           chip.className = "ask-tool";
-          const where = payload.args && (payload.args.scope || payload.args.region);
+          const where = payload.args && (payload.args.scope || payload.args.region ||
+            payload.args.place || payload.args.country);
           chip.textContent = (TOOL_LABEL[payload.name] || payload.name) + (where ? " · " + where : "");
           tools.appendChild(chip); scroll();
         } else if (event === "delta") {
@@ -274,7 +293,6 @@
   const GREETING = {
     home: "Hi! Here's today's fire watch.",
     explorer: "Spin the globe, then pick a place to watch.",
-    world: "Every country's fires, 2003–2025.",
     dashboard: "Pick a year to see its burning calendar.",
     forecast: "Here's what the coming months may bring.",
     haze: "Haze on the way? I've got tips.",
