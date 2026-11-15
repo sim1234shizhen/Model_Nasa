@@ -9,15 +9,15 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=forecast-flames">
+  <link rel="stylesheet" href="styles.css?v=ui-20261115k">
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
   <header class="site-rail">
-    <a class="brand" href="#/"><span class="brand-mark" aria-hidden="true">▦</span><span>BuriningView</span></a>
+    <a class="brand" href="#/" data-nav="home" aria-label="BuriningView – go to Overview" title="Go to Overview"><span class="brand-mark" aria-hidden="true"><svg class="brand-cloud" viewBox="20 18 80 76" focusable="false"><g fill="var(--mascot, #ee4a3a)"><circle cx="42" cy="53" r="20"/><circle cx="60" cy="42" r="22"/><circle cx="79" cy="54" r="19"/><circle cx="69" cy="70" r="20"/><circle cx="46" cy="71" r="19"/></g><g fill="#fff"><rect x="45" y="46" width="9.5" height="17" rx="4.75"/><rect x="62" y="53" width="17" height="4.8" rx="2.4"/></g></svg></span><span>BuriningView</span></a>
     <nav class="primary-nav" aria-label="Main navigation">
-      <a href="#/" data-nav="home" aria-current="page"><span class="rail-icon" aria-hidden="true">⌂</span>Overview</a>
       <a href="#/explorer" data-nav="explorer"><span class="rail-icon" aria-hidden="true">◎</span>Explorer</a>
+      <a href="#/world" data-nav="world"><span class="rail-icon" aria-hidden="true">◍</span>World</a>
       <a href="#/dashboard" data-nav="dashboard"><span class="rail-icon" aria-hidden="true">▤</span>Dashboard</a>
       <a href="#/forecast" data-nav="forecast"><span class="rail-icon" aria-hidden="true">↗</span>Forecast</a>
       <a href="#/haze" data-nav="haze"><span class="rail-icon" aria-hidden="true">≋</span>Haze</a>
@@ -30,43 +30,92 @@
     <noscript><p class="callout">Enable JavaScript to navigate and use the interactive maps and charts.</p></noscript>
     <p id="status" class="status" role="status"></p>
     <section class="fire-overview" data-page="home" aria-labelledby="overview-title">
-      <header class="page-head overview-head">
-        <div>
-          <h1 id="overview-title" tabindex="-1">Fire watch overview</h1>
-          <p class="lead">Review the latest satellite detections and see which areas the forecast flags for attention.</p>
+      <header class="ov-hero">
+        <div class="ov-hero-text">
+          <p class="ov-kicker"><span class="ov-live" aria-hidden="true"></span>Fire watch · Malaysia &amp; Indonesia</p>
+          <h1 id="overview-title" tabindex="-1">Where are the fires, and where are they heading?</h1>
+          <p class="lead">The latest NASA satellite detections, side by side with the model's outlook for the coming month.</p>
+          <div class="ov-chips">
+            <span class="ov-chip ov-chip-obs"><i aria-hidden="true"></i>Observed <b id="overview-chip-obs">–</b></span>
+            <span class="ov-chip ov-chip-fc"><i aria-hidden="true"></i>Forecast <b id="overview-chip-fc">–</b></span>
+          </div>
+          <div class="ov-filters" data-filters></div>
         </div>
-        <div data-filters></div>
+        <div class="ov-hero-art" aria-hidden="true">
+          <svg viewBox="0 0 240 200">
+            <g class="ov-orbits" fill="none" stroke-width="1.5">
+              <ellipse cx="120" cy="104" rx="104" ry="40"/>
+              <ellipse cx="120" cy="104" rx="88" ry="58" transform="rotate(-18 120 104)"/>
+            </g>
+            <g class="ov-embers">
+              <circle cx="34" cy="70" r="5"/><circle cx="206" cy="132" r="6"/><circle cx="196" cy="46" r="4"/>
+              <circle cx="52" cy="152" r="3.5"/><circle cx="150" cy="176" r="4"/>
+            </g>
+            <g class="ov-bot" transform="translate(120 100) scale(1.25) translate(-60 -57)">
+              <g fill="var(--mascot, #ee4a3a)">
+                <circle cx="42" cy="53" r="20"/><circle cx="60" cy="42" r="22"/><circle cx="79" cy="54" r="19"/>
+                <circle cx="69" cy="70" r="20"/><circle cx="46" cy="71" r="19"/>
+              </g>
+              <g fill="#fff"><rect x="45" y="46" width="9.5" height="17" rx="4.75"/><rect x="62" y="53" width="17" height="4.8" rx="2.4"/></g>
+            </g>
+          </svg>
+        </div>
       </header>
-      <dl class="overview-metrics" aria-label="Fire watch totals">
-        <div class="card"><dt>Cells with detected fires</dt><dd id="overview-detected">–</dd><dd id="overview-detected-date" class="note"></dd></div>
-        <div class="card"><dt>Cells with 8+ fire days</dt><dd id="overview-repeat">–</dd><dd class="note">Repeated detections</dd></div>
-        <div class="card"><dt>Areas to watch</dt><dd id="overview-area-count">–</dd><dd id="overview-watch-date" class="note"></dd></div>
-        <div class="card"><dt>Cells with ≥50% chance</dt><dd id="overview-watch-count">–</dd><dd class="note">Forecast chance of at least one fire day</dd></div>
-      </dl>
-      <div class="overview-panels">
-        <section class="card">
-          <h2>Detected fire activity</h2>
-          <p class="note" id="overview-observed-status" role="status">Loading satellite detections…</p>
-          <button type="button" class="watch-button overview-link" id="overview-open-map" disabled>View detections in Explorer <span aria-hidden="true">→</span></button>
+
+      <div class="ov-metrics">
+        <section class="ov-group ov-group-obs" aria-labelledby="ov-obs-h">
+          <h2 id="ov-obs-h" class="ov-group-h"><span>What satellites saw</span><span id="overview-detected-date" class="ov-group-date"></span></h2>
+          <dl class="ov-tiles">
+            <div class="ov-tile"><span class="ov-icon" aria-hidden="true">◉</span><dt>Cells with detected fires</dt><dd id="overview-detected">–</dd><dd class="ov-tile-note">Grid cells about 28 km across</dd></div>
+            <div class="ov-tile"><span class="ov-icon" aria-hidden="true">▲</span><dt>Cells with 8+ fire days</dt><dd id="overview-repeat">–</dd><dd class="ov-tile-note">Burning again and again</dd></div>
+          </dl>
         </section>
-        <section class="card">
-          <h2>Forecast outlook</h2>
-          <p class="note" id="overview-watch-status" role="status">Loading the fire forecast…</p>
-          <ol id="overview-top-places" class="overview-top-places"></ol>
-          <a class="panel-link" href="#/explorer">Open the place watchlist <span aria-hidden="true">→</span></a>
+        <section class="ov-group ov-group-fc" aria-labelledby="ov-fc-h">
+          <h2 id="ov-fc-h" class="ov-group-h"><span>What the model expects</span><span id="overview-watch-date" class="ov-group-date"></span></h2>
+          <dl class="ov-tiles">
+            <div class="ov-tile"><span class="ov-icon" aria-hidden="true">⚑</span><dt>Areas to watch</dt><dd id="overview-area-count">–</dd><dd class="ov-tile-note">With at least one likely-fire cell</dd></div>
+            <div class="ov-tile"><span class="ov-icon" aria-hidden="true">◎</span><dt>Cells with ≥50% chance</dt><dd id="overview-watch-count">–</dd><dd class="ov-tile-note">Of at least one fire day</dd></div>
+          </dl>
         </section>
       </div>
+
+      <div class="overview-panels">
+        <section class="card ov-panel">
+          <div class="ov-panel-head">
+            <h2>How intense was the burning?</h2>
+            <span class="ov-tag ov-tag-obs">Observed</span>
+          </div>
+          <p class="note" id="overview-observed-status" role="status">Loading satellite detections…</p>
+          <div class="ov-sev" id="overview-severity" hidden>
+            <div class="ov-sev-bar" id="overview-sev-bar"></div>
+            <ul class="ov-sev-legend" id="overview-sev-legend"></ul>
+          </div>
+          <button type="button" class="ov-btn" id="overview-open-map" disabled>View detections in Explorer <span aria-hidden="true">→</span></button>
+        </section>
+        <section class="card ov-panel">
+          <div class="ov-panel-head">
+            <h2>Places to watch</h2>
+            <span class="ov-tag ov-tag-fc">Forecast</span>
+          </div>
+          <p class="note" id="overview-watch-status" role="status">Loading the fire forecast…</p>
+          <ol id="overview-top-places" class="ov-rank"></ol>
+          <a class="ov-btn ov-btn-ghost" href="#/explorer">Open the place watchlist <span aria-hidden="true">→</span></a>
+        </section>
+      </div>
+
+      <nav class="ov-links" aria-label="Explore more">
+        <a href="#/world" data-nav="world"><span class="ov-link-icon" aria-hidden="true">⊕</span><b>World Fire Atlas</b><small>Every country, 2003–2025</small></a>
+        <a href="#/forecast" data-nav="forecast"><span class="ov-link-icon" aria-hidden="true">↗</span><b>Fire Forecast</b><small>How much fire the coming months may bring</small></a>
+        <a href="#/haze" data-nav="haze"><span class="ov-link-icon" aria-hidden="true">≋</span><b>Haze Preparedness</b><small>What to do before the haze arrives</small></a>
+        <a href="#/dashboard" data-nav="dashboard"><span class="ov-link-icon" aria-hidden="true">▤</span><b>Fire Dashboard</b><small>Burning calendar and year-by-year history</small></a>
+      </nav>
     </section>
 
     <section class="watch-workspace explorer-workspace" id="explorer-map-panel" data-page="explorer" aria-labelledby="explorer-title" hidden>
         <div class="map-toolbar">
           <h1 id="explorer-title" class="explorer-page-title" tabindex="-1">Fire Explorer</h1>
           <div class="map-tools">
-          <a class="brand-mark toolbar-brand" href="#/" aria-label="BuriningView home" title="BuriningView home">▦</a>
-          <button type="button" id="place-search-open" class="place-search-trigger" aria-haspopup="dialog"
-                  aria-controls="place-search-dialog" disabled>
-            <span class="place-search-icon" aria-hidden="true"></span>Search places
-          </button>
+          <a class="brand-mark toolbar-brand" href="#/" data-nav="home" aria-label="BuriningView – go to Overview" title="Go to Overview"><svg class="brand-cloud" viewBox="20 18 80 76" aria-hidden="true" focusable="false"><g fill="var(--mascot, #ee4a3a)"><circle cx="42" cy="53" r="20"/><circle cx="60" cy="42" r="22"/><circle cx="79" cy="54" r="19"/><circle cx="69" cy="70" r="20"/><circle cx="46" cy="71" r="19"/></g><g fill="#fff"><rect x="45" y="46" width="9.5" height="17" rx="4.75"/><rect x="62" y="53" width="17" height="4.8" rx="2.4"/></g></svg></a>
           <details class="hero-options" name="explorer-map-tools">
             <summary>Map controls</summary>
             <div class="hero-control-menu"> <div class="hero-buttons">
@@ -136,20 +185,19 @@
           <div class="watch-panel-head">
             <h2 id="watchlist-title">Place watchlist</h2>
             <div class="watch-panel-actions">
-              <button type="button" class="watch-float-btn" id="watch-float-toggle" aria-pressed="false"
-                      aria-label="Float watchlist panel" title="Float panel - drag to move, corner to resize">
-                <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false">
-                  <rect x="2.6" y="2.6" width="6.8" height="6.8" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.5"/>
-                  <path d="M9.6 9.6h3.8v3.8H9.6z" fill="currentColor"/>
-                </svg>
-              </button>
               <button type="button" class="watch-button" id="watch-add-toggle" aria-expanded="false"
                       aria-controls="watch-add-form" disabled>+ Add place</button>
             </div>
           </div>
           <form id="watch-add-form" class="watch-add-form" hidden>
             <label for="watch-add-place">Forecast area</label>
-            <select id="watch-add-place" required></select>
+            <div class="combo">
+              <input id="watch-add-place" type="text" role="combobox" autocomplete="off" spellcheck="false"
+                     aria-autocomplete="list" aria-expanded="false" aria-controls="watch-add-options"
+                     placeholder="Search or choose a place">
+              <span class="combo-arrow" aria-hidden="true">▾</span>
+              <ul id="watch-add-options" class="combo-list" role="listbox" aria-label="Forecast areas" hidden></ul>
+            </div>
             <button class="watch-button" type="submit">Add</button>
           </form>
           <div class="watch-table">
@@ -211,14 +259,72 @@
             <ul id="watch-news" class="watch-news"></ul>
           </section>
 
-          <section class="watch-subpanel watch-ai" aria-labelledby="watch-ai-title">
-            <h3 id="watch-ai-title">Ziro briefing</h3>
-            <p class="note" id="watch-ai-status" role="status">Ziro is available when the site is connected to the consultant server.</p>
-            <button type="button" class="watch-button" id="watch-ai-generate" hidden>Ask Ziro for a briefing</button>
-            <div id="watch-ai-result" class="watch-ai-result"></div>
-          </section>
         </section>
       </aside>
+    </section>
+
+    <section data-page="world" aria-labelledby="world-title" hidden>
+      <div class="page-head">
+        <p class="eyebrow">2003–2025 · every country</p>
+        <h1 id="world-title" tabindex="-1">World Fire Atlas</h1>
+        <p class="lead">Fire activity for the whole world, harmonized from MODIS and VIIRS NOAA-20 onto one scale. Pick a period, then click a country on the map or in the list.</p>
+      </div>
+      <div class="filters" role="group" aria-label="World filters">
+        <label>Year <select id="w-year"></select></label>
+        <label>Period <select id="w-month"></select></label>
+        <label>Country <select id="w-country"></select></label>
+        <span class="status" id="w-status" role="status"></span>
+      </div>
+      <section class="tiles" id="w-tiles" aria-label="Key figures"></section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2 id="w-map-title">Fire activity map</h2>
+            <p class="note" id="w-map-note">Fire cell-days per 1° grid cell (about 110 km). Hover for details, click a cell to select its country.</p>
+          </div>
+        </div>
+        <div id="w-map" class="map world-map"></div>
+        <div class="scale" id="w-map-legend"></div>
+      </section>
+
+      <div class="world-grid">
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <h2 id="w-rank-title">Countries ranked</h2>
+              <p class="note">Fire cell-days in the selected period, and how that compares with the country's typical level for the same period (median 2003–2025). Click a row to select it.</p>
+            </div>
+          </div>
+          <div class="table-wrap world-rank"><table class="data" id="w-rank"></table></div>
+          <button type="button" class="link-btn" id="w-rank-more" hidden></button>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <h2 id="w-country-title">World</h2>
+              <p class="note" id="w-country-note"></p>
+            </div>
+          </div>
+          <div class="legend" id="w-series-legend"></div>
+          <div class="chart-box"><canvas id="w-series" aria-label="Monthly fire activity for the selected country" role="img"></canvas></div>
+          <h3 class="mini-h">Burning calendar</h3>
+          <div class="cal" id="w-cal"></div>
+          <div class="scale" id="w-cal-legend"></div>
+        </section>
+      </div>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>Global calibration: MODIS → VIIRS NOAA-20</h2>
+            <p class="note">For each country, VIIRS = k × MODIS is fitted on monthly fire cell-days from April 2018 to 2025, when both sensors observed. It is tested by leaving out one year at a time, and by fitting on 2018–2023 and predicting 2024–2025. Countries with too few fires use the pooled global k.</p>
+          </div>
+        </div>
+        <div class="tiles inner" id="w-val"></div>
+        <div class="table-wrap"><table class="data" id="w-calib"></table></div>
+      </section>
     </section>
 
     <section data-page="dashboard" aria-labelledby="dashboard-title" hidden>
@@ -386,10 +492,31 @@
           <div class="chip-row" id="outlook-chips" aria-label="Forecast chance of above-normal burning by month"></div>
           <p class="note" id="outlook-line"></p>
         </div>
-        <div class="callout prep">
-          <h3 id="prep-title">Before the high-risk months</h3>
-          <ul id="prep-list"></ul>
-          <p class="fine">General guidance only, not medical advice. Fire counts show where and when burning happens, not the air quality where you are.</p>
+        <div class="prep-kit" aria-labelledby="prep-title">
+          <div class="prep-head">
+            <div class="prep-sky" aria-hidden="true"><i></i><i></i><i></i></div>
+            <svg class="prep-ziro" viewBox="0 0 120 112" aria-hidden="true">
+              <!-- Ziro in a mask -->
+              <g class="prep-ziro-body">
+                <g fill="var(--mascot, #ee4a3a)">
+                  <circle cx="42" cy="53" r="20"/><circle cx="60" cy="42" r="22"/><circle cx="79" cy="54" r="19"/>
+                  <circle cx="69" cy="70" r="20"/><circle cx="46" cy="71" r="19"/>
+                </g>
+                <g fill="#fff"><rect x="45" y="40" width="9" height="14" rx="4.5"/><rect x="65" y="40" width="9" height="14" rx="4.5"/></g>
+                <path d="M30 58 L40 62 M90 58 L80 62" stroke="#cfe3f5" stroke-width="2.5" stroke-linecap="round"/>
+                <path d="M39 60 Q60 54 81 60 L79 76 Q60 86 41 76 Z" fill="#fff" stroke="#cfe3f5" stroke-width="2"/>
+                <path d="M46 66 Q60 62 74 66 M46 72 Q60 68 74 72" fill="none" stroke="#b9d3ea" stroke-width="1.6"/>
+              </g>
+              <g class="prep-sparkles" fill="#f59e0b"><circle cx="16" cy="30" r="3"/><circle cx="104" cy="22" r="2.5"/><circle cx="108" cy="88" r="3"/></g>
+            </svg>
+            <div class="prep-head-text">
+              <p class="prep-kicker">Ziro's haze kit</p>
+              <h3 id="prep-title">Before the high-risk months</h3>
+              <p class="prep-sub">Four things to sort out now, before the smoke arrives.</p>
+            </div>
+          </div>
+          <ul id="prep-list" class="prep-cards"></ul>
+          <p class="fine prep-fine"><span aria-hidden="true">ⓘ</span> General guidance only, not medical advice. Fire counts show where and when burning happens, not the air quality where you are.</p>
         </div>
       </section>
     </section>
@@ -738,6 +865,7 @@
   <div id="tip" class="tip" role="tooltip" hidden></div>
 
   <!-- Consultant: floating launcher and card, bottom right. -->
+  <button type="button" id="ask-toast" class="ask-toast" hidden aria-live="polite"></button>
   <button type="button" id="ask-open" class="ask-open" hidden
           aria-expanded="false" aria-controls="ask-panel">
     <span class="ask-open-mark" id="ask-open-mark" aria-hidden="true"></span>
@@ -817,9 +945,10 @@
     </div>
   </template>
 
-  <script src="app.js?v=forecast-flames" defer></script>
-  <script src="consultant.js" defer></script>
-  <script src="timeline-fx.js" defer></script>
-  <script src="state-map.js" defer></script>
+  <script src="app.js?v=ui-20261115j" defer></script>
+  <script src="world.js?v=ui-20261115j" defer></script>
+  <script src="consultant.js?v=ui-20261115j" defer></script>
+  <script src="timeline-fx.js?v=ui-20261115j" defer></script>
+  <script src="state-map.js?v=ui-20261115k" defer></script>
 </body>
 </html>

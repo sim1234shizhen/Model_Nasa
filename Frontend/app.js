@@ -686,13 +686,126 @@ function prepAdvice() {
   if (countries.has("Malaysia")) sources.push("Malaysia: APIMS");
   if (countries.has("Indonesia")) sources.push("Indonesia: ISPU");
   sources.push("Singapore: NEA PSI");
+  const airLinks = [];
+  if (countries.has("Malaysia")) airLinks.push(
+    { kind: "live", label: "APIMS – official Air Pollutant Index", source: "Malaysia DOE", href: "https://eqms.doe.gov.my/APIMS/main" },
+    { kind: "news", label: "Why your AQI app says 250 when the official API is 175", source: "Malay Mail · 8 Oct 2026", href: "https://www.malaymail.com/news/malaysia/2026/10/08/hazy-math-doe-explains-why-your-aqi-says-250-when-the-official-api-is-175/238237" });
+  if (countries.has("Indonesia")) airLinks.push(
+    { kind: "live", label: "ISPU – Indeks Standar Pencemar Udara", source: "Indonesia KLH", href: "https://ispu.kemenlh.go.id" },
+    { kind: "news", label: "KLH: 17 areas reach the hazardous ISPU category", source: "Metro TV · 22 Oct 2026", href: "https://www.metrotvnews.com/read/KXyCmpdl-klh-udara-17-wilayah-kategori-berbahaya-ispu-tembus-1-299" });
+  airLinks.push({ kind: "live", label: "Haze updates and PSI readings", source: "Singapore NEA", href: "https://www.haze.gov.sg" });
   return [
-    `Follow official air-quality readings (${sources.join("; ")}) and set alerts.`,
-    "Stock well-fitting N95/KN95 masks. Surgical masks do little against fine smoke particles.",
-    "People with asthma, heart or lung conditions: check medication and an action plan with a doctor.",
-    "Schools and parents: plan indoor activities and keep a clean-air room (windows shut, air purifier).",
+    { tone: "air", icon: PREP_ICONS.air, title: "Watch the air",
+      text: `Follow official air-quality readings (${sources.join("; ")}) and set alerts.`,
+      facts: [
+        "Use the official index for your country. Phone apps often show an international AQI, which uses a different scale and can read much higher for the same air.",
+        "Malaysia's API and Indonesia's ISPU share the same bands: 0–50 good, 51–100 moderate, 101–200 unhealthy, 201–300 very unhealthy, above 300 hazardous.",
+        "Smoke can drift across borders within days, so check readings even when fires are far away.",
+      ],
+      links: airLinks },
+    { tone: "mask", icon: PREP_ICONS.mask, title: "Get the right mask",
+      text: "Stock well-fitting N95/KN95 masks. Surgical masks do little against fine smoke particles.",
+      facts: [
+        "A mask only protects if it seals over both nose and mouth. A loose N95 lets smoke leak in around the edges.",
+        "Short trips, such as home to school or work, usually don't need an N95. Long or hard outdoor activity in unhealthy air does.",
+        "People with severe heart or lung problems should ask a doctor before wearing an N95, because it makes breathing harder.",
+      ],
+      links: [
+        { kind: "guide", label: "How to protect yourself against the haze", source: "HealthHub Singapore", href: "https://www.healthhub.sg/live-healthy/how-to-protect-yourself-against-haze" },
+        { kind: "guide", label: "Public health advice during wildfires", source: "WHO Europe", href: "https://www.who.int/europe/news-room/questions-and-answers/item/public-health-advice-during-the-wildfires--how-to-protect-your-health-and-keep-safe" },
+        { kind: "news", label: "Singapore agencies step up haze measures", source: "NEA · Aug 2026", href: "https://www.nea.gov.sg/media/news/news/index/singapore-government-agencies-implement-measures-to-mitigate-impact-of-haze-Aug2026" },
+      ] },
+    { tone: "health", icon: PREP_ICONS.health, title: "Check your health plan",
+      text: "People with asthma, heart or lung conditions: check medication and an action plan with a doctor.",
+      facts: [
+        "Most at risk: babies and young children, older people, pregnant women, and anyone with heart or lung disease.",
+        "Keep enough medication at home for a hazy spell, and know when to use your reliever or action plan.",
+        "Get medical help quickly for trouble breathing, chest pain or wheezing that does not settle.",
+      ],
+      links: [
+        { kind: "news", label: "Wildfire smoke poses a hidden health threat", source: "UN News · Jul 2026", href: "https://news.un.org/en/story/2026/07/1168060" },
+        { kind: "guide", label: "Who is most at risk, and what to do", source: "WHO Europe", href: "https://www.who.int/europe/news-room/questions-and-answers/item/public-health-advice-during-the-wildfires--how-to-protect-your-health-and-keep-safe" },
+      ] },
+    { tone: "home", icon: PREP_ICONS.home, title: "Make a clean-air room",
+      text: "Schools and parents: plan indoor activities and keep a clean-air room (windows shut, air purifier).",
+      facts: [
+        "Pick a room everyone fits in, ideally with a bathroom nearby. Close its windows and doors, but keep it easy to leave.",
+        "Run a portable HEPA air cleaner, or set the air-conditioner to recirculate.",
+        "Don't add smoke indoors: no candles, incense, smoking or frying. Clean with a damp cloth so dust doesn't fly back up.",
+        "Air the room out once the outdoor readings improve.",
+      ],
+      links: [
+        { kind: "guide", label: "Create a clean room during wildfire smoke", source: "US EPA", href: "https://www.epa.gov/indoor-air-quality-iaq/create-clean-room-protect-indoor-air-quality-during-wildfire" },
+        { kind: "guide", label: "Clean room infographic (printable)", source: "US EPA", href: "https://www.epa.gov/emergencies-iaq/create-clean-room-during-wildfire-infographic" },
+        { kind: "guide", label: "Haze guidelines for workplaces", source: "Singapore MOM", href: "https://www.mom.gov.sg/haze" },
+      ] },
   ];
 }
+const PREP_KIND = { live: "Live data", guide: "Guide", news: "News" };
+const prepOpen = new Set();
+
+/* ---- live headlines: /api/news (backend fetches Google News, cached ~2 h) ----
+   The built-in News links above are the fallback; when the backend has newer
+   headlines they replace them. Re-checked every 30 minutes while the page is open. */
+const NEWS_TTL = 30 * 60 * 1000;
+const newsCache = new Map();
+function liveNews(topic, countries) {
+  const key = topic + "|" + countries.join(",");
+  const hit = newsCache.get(key);
+  if (hit && Date.now() - hit.t < NEWS_TTL) return hit.p;
+  const p = getJSON("/news?" + new URLSearchParams({ topic, countries: countries.join(","), limit: 3 }))
+    .catch(() => { newsCache.delete(key); return { items: [] }; });
+  newsCache.set(key, { t: Date.now(), p });
+  return p;
+}
+const newsDay = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" });
+function newsWhen(iso) {
+  const d = new Date(iso), days = Math.floor((Date.now() - d) / 864e5);
+  return days <= 0 ? "Today" : days === 1 ? "Yesterday" : days < 7 ? days + " days ago" : newsDay.format(d);
+}
+function scopeCountries() {
+  const regs = scopeRegionNames();
+  return [...new Set(state.regions.filter((r) => regs.includes(r.region)).map((r) => r.country))].sort();
+}
+let prepNewsToken = 0;
+function updatePrepNews() {
+  const token = ++prepNewsToken, countries = scopeCountries();
+  for (const tone of ["air", "mask", "health", "home"]) {
+    liveNews(tone, countries).then((d) => {
+      const ul = $("#prep-links-" + tone);
+      if (token !== prepNewsToken || !ul || !d.items?.length) return;
+      ul.querySelectorAll('li[data-kind="news"]').forEach((li) => li.remove());
+      ul.insertAdjacentHTML("afterbegin", d.items.map((n) => `<li data-kind="news"><a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer">
+          <span class="prep-kind prep-kind-news">News · ${esc(newsWhen(n.published))}</span>
+          <span class="prep-link-text">${esc(n.title)}<small>${esc(n.source || "News")}</small></span>
+          <span class="prep-ext" aria-hidden="true">↗</span><span class="sr-only">(opens in a new tab)</span></a></li>`).join(""));
+      const head = $("#prep-src-" + tone);
+      if (head) head.innerHTML = `Read more <span class="prep-live"><i aria-hidden="true"></i>Latest news, updated automatically</span>`;
+    });
+  }
+}
+setInterval(() => { if (route.page === "haze") updatePrepNews(); }, NEWS_TTL);
+
+// Small cartoon icons for the haze kit cards (48×48, inline SVG, decorative).
+const PREP_ICONS = {
+  air: `<svg viewBox="0 0 48 48"><rect x="12" y="5" width="22" height="38" rx="5" fill="#fff" stroke="currentColor" stroke-width="2.5"/>
+    <path d="M17 27a6 6 0 0 1 12 0" fill="none" stroke="#22c55e" stroke-width="3" stroke-linecap="round"/>
+    <path d="M23 27l3-4" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><circle cx="23" cy="27" r="1.8" fill="currentColor"/>
+    <rect x="18" y="34" width="10" height="3" rx="1.5" fill="currentColor" opacity=".35"/>
+    <g class="prep-ring"><path d="M36 9a5 5 0 0 1 5 5v4l2 3H31l2-3v-4a5 5 0 0 1 3-5z" fill="#facc15" stroke="#b45309" stroke-width="1.6"/><circle cx="37" cy="23" r="1.8" fill="#b45309"/></g></svg>`,
+  mask: `<svg viewBox="0 0 48 48"><path d="M6 20c-3 0-3 9 3 10M42 20c3 0 3 9-3 10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+    <path d="M8 18q16-8 32 0l-2 14q-14 9-28 0z" fill="#fff" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M13 23q11-4 22 0M13 28q11-4 22 0" fill="none" stroke="currentColor" stroke-width="1.6" opacity=".45"/>
+    <text x="24" y="40" text-anchor="middle" font-size="7" font-weight="700" fill="currentColor" font-family="sans-serif">N95</text></svg>`,
+  health: `<svg viewBox="0 0 48 48"><path class="prep-beat" d="M24 41S6 30 6 17a9 9 0 0 1 18-3 9 9 0 0 1 18 3c0 13-18 24-18 24z" fill="#fda4af" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/>
+    <path d="M10 23h8l3-6 4 11 3-5h10" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  home: `<svg viewBox="0 0 48 48"><path d="M6 22L24 7l18 15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M10 20v21h28V20" fill="#fff" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/>
+    <rect x="17" y="26" width="14" height="13" rx="2.5" fill="#ddd6fe" stroke="currentColor" stroke-width="2"/>
+    <g class="prep-fan"><path d="M24 32.5l0-4.5M24 32.5l3.9 2.2M24 32.5l-3.9 2.2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></g>
+    <circle cx="24" cy="32.5" r="1.3" fill="currentColor"/>
+    <path class="prep-breeze" d="M34 12q4-2 6 1M36 16q4-2 7 1" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round"/></svg>`,
+};
 
 function renderHaze() {
   const lv = seasonLevels();
@@ -702,7 +815,37 @@ function renderHaze() {
   const mid = lv.map((l, i) => (l === "mid" ? i : -1)).filter((i) => i >= 0);
   $("#season-line").innerHTML = `<b>High-risk months:</b> ${esc(listMonths(hi) || "none")}.` +
     (mid.length ? ` Lighter shading marks above-average months (${esc(listMonths(mid))}).` : "");
-  $("#prep-list").innerHTML = prepAdvice().map((s) => `<li>${esc(s)}</li>`).join("");
+  const list = $("#prep-list");
+  list.innerHTML = prepAdvice().map((tip, i) => {
+    const open = prepOpen.has(tip.tone);
+    return `<li class="prep-card prep-${tip.tone}" style="--i:${i}">
+      <span class="prep-icon" aria-hidden="true">${tip.icon}</span>
+      <span class="prep-step" aria-hidden="true">${i + 1}</span>
+      <b>${esc(tip.title)}</b><span class="prep-text">${esc(tip.text)}</span>
+      <button type="button" class="prep-more-btn" data-tone="${tip.tone}" aria-expanded="${open}" aria-controls="prep-more-${tip.tone}">
+        <span>${open ? "Show less" : "Learn more"}</span><i aria-hidden="true">▾</i></button>
+      <div class="prep-more" id="prep-more-${tip.tone}"${open ? "" : " hidden"}>
+        <ul class="prep-facts">${tip.facts.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>
+        <p class="prep-src-h" id="prep-src-${tip.tone}">Read more</p>
+        <ul class="prep-links" id="prep-links-${tip.tone}">${tip.links.map((l) => `<li data-kind="${l.kind}"><a href="${l.href}" target="_blank" rel="noopener noreferrer">
+          <span class="prep-kind prep-kind-${l.kind}">${PREP_KIND[l.kind]}</span>
+          <span class="prep-link-text">${esc(l.label)}<small>${esc(l.source)}</small></span>
+          <span class="prep-ext" aria-hidden="true">↗</span><span class="sr-only">(opens in a new tab)</span></a></li>`).join("")}</ul>
+      </div></li>`;
+  }).join("");
+  updatePrepNews();
+  if (!list.dataset.bound) {
+    list.dataset.bound = "1";
+    list.addEventListener("click", (e) => {
+      const btn = e.target.closest(".prep-more-btn");
+      if (!btn) return;
+      const open = btn.getAttribute("aria-expanded") !== "true";
+      btn.setAttribute("aria-expanded", String(open));
+      btn.querySelector("span").textContent = open ? "Show less" : "Learn more";
+      $("#prep-more-" + btn.dataset.tone).hidden = !open;
+      if (open) prepOpen.add(btn.dataset.tone); else prepOpen.delete(btn.dataset.tone);
+    });
+  }
   renderOutlookChips();
 }
 
@@ -1009,7 +1152,7 @@ function loadOverview() {
   const observed = state.series.at(-1);
   if (!observed) return;
   const outlook = firstForecastPeriod(observed);
-  import("./overview.js?v=satellite-forecast").then(({ renderOverview }) => {
+  import("./overview.js?v=ui-20261115j").then(({ renderOverview }) => {
     if (route.page === "home") {
       renderOverview({ observed, outlook, getJSON, scope: state.scope, openExplorer(year, month) {
         setYM(year, month);
@@ -1032,7 +1175,7 @@ function loadExplorerWatchlist() {
   const outlook = forecast
     ? { year: picked.year, month: picked.month, enso: ensoFor(picked.year) }
     : firstForecastPeriod(latest);
-  import("./overview.js?v=satellite-forecast").then(({ renderExplorerWatchlist }) => {
+  import("./overview.js?v=ui-20261115j").then(({ renderExplorerWatchlist }) => {
     if (route.page !== "explorer") return;
     renderExplorerWatchlist({
       outlook, layer: forecast ? "forecast" : "observed",
@@ -1053,6 +1196,7 @@ function loadExplorerWatchlist() {
 /* ---------- navigation ---------- */
 const pages = {
   home: "Overview",
+  world: "World Fire Atlas",
   explorer: "Explorer",
   dashboard: "Fire Dashboard",
   forecast: "Fire Forecast",
@@ -1137,6 +1281,9 @@ function renderView() {
   switch (route.page) {
     case "home":
       loadOverview();
+      break;
+    case "world":
+      if (window.renderWorld) window.renderWorld();   // world.js
       break;
     case "explorer":
       terrainModule ??= import("./hero3d.js?v=forecast-flames").catch(() => { $("#hero-status").textContent = "3D view could not load"; });

@@ -47,21 +47,25 @@ function forecastFor(getJSON, scope, { year, enso }) {
 
 export function renderOverview({ observed, outlook, getJSON, scope, openExplorer }) {
   const request = ++homeRequest;
-  el("overview-detected-date").textContent = "Observed · " + dateLabel(observed);
-  el("overview-watch-date").textContent = "Forecast · " + dateLabel(outlook);
+  el("overview-detected-date").textContent = dateLabel(observed);
+  el("overview-watch-date").textContent = dateLabel(outlook);
+  el("overview-chip-obs").textContent = dateLabel(observed);
+  el("overview-chip-fc").textContent = dateLabel(outlook);
   for (const id of ["detected", "repeat", "area-count", "watch-count"]) el("overview-" + id).textContent = "–";
   const observedStatus = el("overview-observed-status"), forecastStatus = el("overview-watch-status");
   const openMap = el("overview-open-map");
   openMap.disabled = true;
   observedStatus.textContent = "Loading satellite detections…";
   forecastStatus.textContent = "Loading the fire forecast…";
+  el("overview-severity").hidden = true;
   el("overview-top-places").replaceChildren();
   const { year, month } = observed;
   getJSON("/hotspots/grid?" + new URLSearchParams({ scope, year, month, cell: "0.25" })).then((grid) => {
     if (request !== homeRequest) return;
-    el("overview-detected").textContent = number.format(grid.cells.length);
-    el("overview-repeat").textContent = number.format(grid.cells.filter(({ cell_days }) => cell_days >= 8).length);
-    observedStatus.textContent = `${number.format(grid.hotspots)} ${grid.sensor} detections in ${number.format(grid.cells.length)} grid cells, each about 28 km across.`;
+    countUp(el("overview-detected"), grid.cells.length);
+    countUp(el("overview-repeat"), grid.cells.filter(({ cell_days }) => cell_days >= 8).length);
+    observedStatus.textContent = `${number.format(grid.hotspots)} ${grid.sensor} detections in ${number.format(grid.cells.length)} grid cells. Each cell is grouped by how many days it burned that month.`;
+    renderSeverity(grid.cells);
     openMap.disabled = false;
     openMap.onclick = () => openExplorer(year, month);
   }).catch(() => {
@@ -70,19 +74,62 @@ export function renderOverview({ observed, outlook, getJSON, scope, openExplorer
   forecastFor(getJSON, scope, outlook).then((grid) => {
     if (request !== homeRequest) return;
     const places = [...catalogFor(grid, outlook.month).values()].filter((place) => place.high > 0).sort(byRisk);
-    el("overview-area-count").textContent = number.format(places.length);
-    el("overview-watch-count").textContent = number.format(places.reduce((sum, place) => sum + place.high, 0));
+    countUp(el("overview-area-count"), places.length);
+    countUp(el("overview-watch-count"), places.reduce((sum, place) => sum + place.high, 0));
     forecastStatus.textContent = places.length
-      ? "Areas ranked by the number of cells with at least a 50% chance of a fire day."
+      ? `Top areas for ${dateLabel(outlook)}, by the number of grid cells with at least a 50% chance of a fire day.`
       : "No grid cells reach a 50% chance of a fire day for this area and month.";
-    el("overview-top-places").replaceChildren(...places.slice(0, 5).map((place) => {
-      const item = document.createElement("li");
-      item.textContent = place.name + " · " + number.format(place.high) + (place.high === 1 ? " cell" : " cells");
-      return item;
-    }));
+    const top = places.slice(0, 5);
+    const peak = Math.max(1, ...top.map((place) => place.high));
+    el("overview-top-places").innerHTML = top.map((place, i) => {
+      const cells = number.format(place.high) + (place.high === 1 ? " cell" : " cells");
+      return `<li style="--i:${i}">
+        <a href="#/explorer" data-nav="explorer" title="${escapeHTML(place.name)}: ${cells} at 50% or higher${place.max ? `, peak cell ${place.max}%` : ""}">
+          <span class="ov-rank-n">${i + 1}</span>
+          <span class="ov-rank-name"><b>${escapeHTML(place.name)}</b><small>${escapeHTML(place.region || "")}</small></span>
+          <span class="ov-rank-val">${cells}</span>
+          <span class="ov-rank-track" aria-hidden="true"><i style="width:${(place.high / peak * 100).toFixed(1)}%"></i></span>
+        </a></li>`;
+    }).join("");
   }).catch(() => {
     if (request === homeRequest) forecastStatus.textContent = "The fire forecast is unavailable for this month.";
   });
+}
+
+const escapeHTML = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// Numbers tick up to their value once, so the tiles feel alive on arrival.
+function countUp(node, value) {
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduce || value < 10) { node.textContent = number.format(value); return; }
+  const start = performance.now(), ms = 700;
+  const token = (node.dataset.count = String(Math.random()));
+  const step = (now) => {
+    if (node.dataset.count !== token) return;
+    const t = Math.min(1, (now - start) / ms);
+    node.textContent = number.format(Math.round(value * (1 - Math.pow(1 - t, 3))));
+    if (t < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+// Same three bands as the Explorer legend: light 1–2 days, moderate 3–7, heavy 8+.
+const SEVERITY = [
+  { key: "lv0", label: "Light", days: "1–2 days", test: (d) => d < 3 },
+  { key: "lv1", label: "Moderate", days: "3–7 days", test: (d) => d >= 3 && d < 8 },
+  { key: "lv2", label: "Heavy", days: "8+ days", test: (d) => d >= 8 },
+];
+const pct = (n, total) => (n && n / total < .005 ? "<1%" : Math.round(n / total * 100) + "%");
+function renderSeverity(cells) {
+  const total = cells.length;
+  const box = el("overview-severity");
+  if (!total) { box.hidden = true; return; }
+  const counts = SEVERITY.map((band) => ({ ...band, n: cells.filter(({ cell_days }) => band.test(cell_days)).length }));
+  el("overview-sev-bar").innerHTML = counts.filter((b) => b.n).map((b) =>
+    `<span class="${b.key}" style="flex-grow:${b.n}" title="${b.label} (${b.days}): ${number.format(b.n)} cells, ${pct(b.n, total)}"></span>`).join("");
+  el("overview-sev-legend").innerHTML = counts.map((b) =>
+    `<li><i class="${b.key}" aria-hidden="true"></i><span>${b.label} <small>${b.days}</small></span><b>${number.format(b.n)}</b><small class="ov-pct">${pct(b.n, total)}</small></li>`).join("");
+  box.hidden = false;
 }
 
 export function renderExplorerWatchlist(options) {
@@ -129,6 +176,7 @@ export function renderExplorerWatchlist(options) {
 function init() {
   initialized = true;
   initPlaceSearch();
+  initCombo();
   // The timeline is the only era control now: app.js passes layer with each render.
   const form = el("watch-add-form");
   const toggle = el("watch-add-toggle");
@@ -139,8 +187,9 @@ function init() {
   });
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    const name = el("watch-add-place").value;
-    if (!catalog.has(name)) return;
+    const name = resolveAddName();
+    if (!catalog.has(name)) { el("watch-add-place").focus(); renderCombo(); return; }
+    closeCombo();
     if (!saved.includes(name)) { saved.push(name); storeSaved(); }
     selectPlace(name);
     form.hidden = true;
@@ -203,6 +252,7 @@ function initPlaceSearch() {
   const dialog = el("place-search-dialog");
   const input = el("place-search-input");
   const results = el("place-search-results");
+  if (!trigger) return;   // the toolbar "Search places" button was removed
   trigger.disabled = false;
   trigger.addEventListener("click", () => {
     input.value = "";
@@ -417,14 +467,91 @@ function renderList() {
   el("explorer-watch-status").textContent = entries.length
     ? "" : "No places saved yet — add one to start watching it.";
   if (prior !== undefined) focusRow(prior);
-  const select = el("watch-add-place");
-  select.replaceChildren(new Option("Choose a place", ""));
-  select.options[0].disabled = true;
-  select.options[0].selected = true;
-  for (const name of catalog.keys()) {
-    if (!saved.includes(name)) select.add(new Option(name, name));
-  }
-  el("watch-add-toggle").disabled = select.options.length === 1;
+  addChoices = [...catalog.keys()].filter((name) => !saved.includes(name));
+  el("watch-add-place").value = "";
+  if (!el("watch-add-options").hidden) renderCombo();
+  el("watch-add-toggle").disabled = addChoices.length === 0;
+}
+
+/* ---- "Add place" search box: click to see every place, type to filter ---- */
+let addChoices = [], comboMatches = [], comboActive = -1;
+
+function comboFilter() {
+  const q = el("watch-add-place").value.trim().toLowerCase();
+  if (!q) return addChoices;
+  const hits = addChoices.filter((name) => (name + " " + (catalog.get(name)?.region || "")).toLowerCase().includes(q));
+  // names that start with the text first, then the rest
+  return hits.sort((a, b) => (b.toLowerCase().startsWith(q) - a.toLowerCase().startsWith(q)) || a.localeCompare(b));
+}
+
+function renderCombo() {
+  const input = el("watch-add-place"), list = el("watch-add-options");
+  const q = input.value.trim();
+  comboMatches = comboFilter();
+  if (comboActive >= comboMatches.length) comboActive = comboMatches.length - 1;
+  const mark = (name) => {
+    const i = q ? name.toLowerCase().indexOf(q.toLowerCase()) : -1;
+    if (i < 0) return settings.escape(name);
+    return settings.escape(name.slice(0, i)) + "<mark>" + settings.escape(name.slice(i, i + q.length)) + "</mark>" + settings.escape(name.slice(i + q.length));
+  };
+  list.innerHTML = comboMatches.length
+    ? comboMatches.map((name, i) => `<li role="option" id="watch-opt-${i}" data-index="${i}" aria-selected="${i === comboActive}">
+        <span>${mark(name)}</span><small>${settings.escape(catalog.get(name)?.region || "")}</small></li>`).join("")
+    : `<li class="combo-empty" role="presentation">No matching places</li>`;
+  list.hidden = false;
+  input.setAttribute("aria-expanded", "true");
+  if (comboActive >= 0) {
+    input.setAttribute("aria-activedescendant", "watch-opt-" + comboActive);
+    list.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+  } else input.removeAttribute("aria-activedescendant");
+}
+
+function closeCombo() {
+  el("watch-add-options").hidden = true;
+  el("watch-add-place").setAttribute("aria-expanded", "false");
+  el("watch-add-place").removeAttribute("aria-activedescendant");
+  comboActive = -1;
+}
+
+function initCombo() {
+  const input = el("watch-add-place"), list = el("watch-add-options");
+  const pick = (name) => { input.value = name; closeCombo(); el("watch-add-form").requestSubmit(); };
+  input.addEventListener("focus", () => { comboActive = -1; renderCombo(); });
+  input.addEventListener("click", () => { if (list.hidden) renderCombo(); });
+  input.addEventListener("input", () => { comboActive = input.value.trim() ? 0 : -1; renderCombo(); });
+  input.addEventListener("blur", closeCombo);
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (list.hidden) { renderCombo(); return; }
+      const n = comboMatches.length;
+      if (!n) return;
+      comboActive = event.key === "ArrowDown" ? (comboActive + 1) % n : (comboActive <= 0 ? n - 1 : comboActive - 1);
+      renderCombo();
+    } else if (event.key === "Enter" && !list.hidden && comboActive >= 0 && comboMatches[comboActive]) {
+      event.preventDefault();
+      pick(comboMatches[comboActive]);
+    } else if (event.key === "Escape" && !list.hidden) {
+      event.preventDefault();
+      closeCombo();
+    }
+  });
+  // mousedown (not click) so the input keeps focus and blur doesn't close the list first
+  list.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    const item = event.target.closest("[data-index]");
+    if (item) pick(comboMatches[+item.dataset.index]);
+  });
+}
+
+// Turn what was typed into a place name: exact match (any case), or the only match left.
+function resolveAddName() {
+  const typed = el("watch-add-place").value.trim().toLowerCase();
+  if (!typed) return "";
+  const exact = addChoices.find((name) => name.toLowerCase() === typed);
+  if (exact) return exact;
+  const hits = comboFilter();
+  return hits.length === 1 ? hits[0] : "";
 }
 
 function renderDetails() {
@@ -467,7 +594,7 @@ function renderDetails() {
     el("watch-share-lo").style.width = (100 - share) + "%";
     setGauge(entries.flatMap((entry) => entry.cells).map((row) => row[2]));
     const question = `Write a short fire-risk briefing for ${name} in ${period}. This outlook shows ${high} grid cells at or above 50% chance of a fire day${max ? `, with a maximum of ${max}% for an individual cell` : ""}. Explain what these model estimates mean for monitoring. Distinguish model estimates from confirmed detections, and avoid treating the forecast as a live incident report.`;
-    if (ai.dataset.question !== question) {
+    if (ai && ai.dataset.question !== question) {
       ai.dataset.question = question;
       ai.dataset.scope = place?.region || scope;
       ai.dataset.year = settings.outlook.year;
@@ -482,11 +609,44 @@ function renderDetails() {
     el("watch-quote-state").textContent = "Loading";
     el("watch-share").hidden = true;
     setGauge([]);
-    delete ai.dataset.question;
-    ai.dispatchEvent(new Event("placechange"));
+    if (ai) {
+      delete ai.dataset.question;
+      ai.dispatchEvent(new Event("placechange"));
+    }
   }
   const isMalaysia = scopedRegions(place?.region || scope).every((region) => region.country === "Malaysia");
-  el("watch-news").innerHTML = news.filter((item) => !item.indonesia || !isMalaysia).map((item) =>
-    `<li><small>${item.source} · ${item.date}</small><a href="${item.href}" target="_blank" rel="noopener noreferrer">${item.title} <span aria-hidden="true">↗</span></a></li>`
-  ).join("");
+  const countries = [...new Set(scopedRegions(place?.region || scope).map((region) => region.country))].sort();
+  // built-in headlines first; replaced by the latest ones from /api/news when they arrive
+  if (el("watch-news").dataset.countries !== countries.join(",")) {
+    el("watch-news").innerHTML = news.filter((item) => !item.indonesia || !isMalaysia).map((item) =>
+      `<li><small>${item.source} · ${item.date}</small><a href="${item.href}" target="_blank" rel="noopener noreferrer">${item.title} <span aria-hidden="true">↗</span></a></li>`
+    ).join("");
+    el("watch-news").dataset.countries = countries.join(",");
+    loadLiveNews(countries);
+  }
 }
+
+const liveNewsCache = new Map();
+const newsDay = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" });
+function loadLiveNews(countries) {
+  const key = countries.join(",");
+  const hit = liveNewsCache.get(key);
+  if (!hit || Date.now() - hit.t > 30 * 60 * 1000) {
+    liveNewsCache.set(key, {
+      t: Date.now(),
+      p: settings.getJSON("/news?" + new URLSearchParams({ topic: "fire", countries: key, limit: 4 }))
+        .catch(() => { liveNewsCache.delete(key); return { items: [] }; }),
+    });
+  }
+  liveNewsCache.get(key).p.then((d) => {
+    const list = el("watch-news");
+    if (list.dataset.countries !== key || !d.items?.length) return;
+    list.innerHTML = d.items.map((n) =>
+      `<li><small>${settings.escape(n.source || "News")} · ${newsDay.format(new Date(n.published))}</small><a href="${settings.escape(n.url)}" target="_blank" rel="noopener noreferrer">${settings.escape(n.title)} <span aria-hidden="true">↗</span></a></li>`
+    ).join("") + `<li class="watch-news-live"><small><i aria-hidden="true"></i>Latest headlines, updated automatically</small></li>`;
+  });
+}
+setInterval(() => {
+  const list = el("watch-news");
+  if (list && list.dataset.countries && !list.closest("[hidden]")) loadLiveNews(list.dataset.countries.split(","));
+}, 30 * 60 * 1000);
