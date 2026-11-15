@@ -268,6 +268,53 @@
     if (b) ask(b.textContent.trim());
   });
 
+  /* ---------- page greeting: a short speech bubble above "Ask Ziro" ----------
+     Shown only after the visitor picks a page from the left menu, then fades away. */
+  const toast = $("ask-toast");
+  const GREETING = {
+    home: "Hi! Here's today's fire watch.",
+    explorer: "Spin the globe, then pick a place to watch.",
+    world: "Every country's fires, 2003–2025.",
+    dashboard: "Pick a year to see its burning calendar.",
+    forecast: "Here's what the coming months may bring.",
+    haze: "Haze on the way? I've got tips.",
+    data: "Curious how it's made? It's all here.",
+    docs: "The full method and files live here.",
+  };
+  let navClicked = false, toastTimer, lastPage = null;
+  const pageOf = () => (location.hash.replace(/^#\/?/, "").split("?")[0] || "home");
+  function hideToast() {
+    clearTimeout(toastTimer);
+    if (!toast || toast.hidden) return;
+    toast.classList.remove("is-in");
+    toastTimer = setTimeout(() => { toast.hidden = true; }, 220);
+  }
+  function showToast(text) {
+    if (!toast || openBtn.hidden || !panel.hidden) return;
+    clearTimeout(toastTimer);
+    toast.textContent = text;
+    toast.hidden = false;
+    void toast.offsetWidth;               // restart the pop-in
+    toast.classList.add("is-in");
+    press();
+    toastTimer = setTimeout(hideToast, 3800);
+  }
+  if (toast) {
+    document.querySelectorAll("[data-nav]").forEach((link) =>
+      link.addEventListener("click", () => { navClicked = true; }));
+    lastPage = pageOf();
+    window.addEventListener("hashchange", () => {
+      const page = pageOf();
+      const changed = page !== lastPage;
+      lastPage = page;
+      if (!navClicked) return;
+      navClicked = false;
+      if (changed && GREETING[page]) setTimeout(() => showToast(GREETING[page]), 350);
+    });
+    toast.addEventListener("click", () => { hideToast(); open(); });
+    openBtn.addEventListener("click", hideToast);
+  }
+
   /* ---------- reveal ---------- */
   fetch(API + "/api/consult")
     .then((r) => r.json())
