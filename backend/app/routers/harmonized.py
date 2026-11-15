@@ -28,9 +28,21 @@ def regions():
 
 
 @router.get("/harmonized")
-def harmonized(scope: str = Query("All", description="All, Malaysia, Indonesia, or a region name")):
+def harmonized(scope: str = Query("All", description="All, World, any country, or a Malaysia/Indonesia region name")):
     """Monthly harmonized fire cell-days (VIIRS-equivalent) with anomaly vs same-month median."""
     return {"scope": scope, "series": _guard(svc.monthly_series, scope)}
+
+
+@router.get("/harmonized/countries")
+def harmonized_countries(year: int = Query(..., ge=2000, le=2030)):
+    """Every country's monthly cell-days for `year` and `year - 1` (world dashboard breakdown)."""
+    return {"year": year, "countries": _guard(svc.world_country_months, year)}
+
+
+@router.get("/harmonized/areas")
+def harmonized_areas():
+    """Countries available in the worldwide record (besides 'World' itself)."""
+    return {"world": svc.WORLD_SCOPE, "countries": _guard(svc.world_countries)}
 
 
 @router.get("/calibration")

@@ -41,8 +41,8 @@
 .sm-hi { fill: none; stroke: var(--ink, #18222e); stroke-width: 2.8; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: none; }
 .sm-cell { stroke: rgba(255,255,255,.55); stroke-width: .6; vector-effect: non-scaling-stroke; cursor: pointer; }
 .sm-cell:hover { stroke: var(--ink, #18222e); stroke-width: 2; }
-.sm-label { font-family: var(--body, system-ui), sans-serif; font-weight: 700; text-anchor: middle; pointer-events: none; paint-order: stroke; stroke-width: 3px; stroke-linejoin: round; }
-.sm-label tspan.v { font-family: var(--mono, ui-monospace), monospace; font-weight: 600; }
+.sm-label { font-family: "DM Sans", system-ui, sans-serif; font-weight: 700; text-anchor: middle; pointer-events: none; fill: #18222e; stroke: #fff; stroke-opacity: .92; paint-order: stroke fill; stroke-linejoin: round; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+.sm-label tspan.v { font-weight: 600; fill: #3a2a24; }
 .sm-in { animation: sm-in .5s ease both; }
 @keyframes sm-in { from { opacity: 0; } to { opacity: 1; } }
 .sm-tip { position: absolute; z-index: 3; width: 232px; pointer-events: none; padding: 10px 12px; border-radius: 10px; background: #fff; border: 1px solid var(--axis, #b9c4cf); box-shadow: 0 8px 22px rgba(20,30,45,.2); font-size: 12px; color: var(--ink-2, #435162); }
@@ -187,20 +187,60 @@
     if (open) openState(open, true); else { closeState(true); }
   }
 
-  function relabel() {   // labels only where they fit at the current zoom
-    if (!gLabels || !view) return; gLabels.innerHTML = "";
-    const unit = view[2] / svg.clientWidth;   // viewBox units per screen pixel
+  // Short forms for states whose full name does not fit at the current zoom (hover still shows the full name).
+  const SHORT = {
+    "Sumatera Selatan": "Sumsel", "Sumatera Utara": "Sumut", "Sumatera Barat": "Sumbar",
+    "Kalimantan Barat": "Kalbar", "Kalimantan Tengah": "Kalteng", "Kalimantan Selatan": "Kalsel", "Kalimantan Timur": "Kaltim",
+    "Kepulauan Riau": "Kepri", "Bangka-Belitung": "Babel", "Sulawesi Selatan": "Sulsel", "Sulawesi Barat": "Sulbar",
+    "Sulawesi Tengah": "Sulteng", "Sulawesi Tenggara": "Sultra", "Sulawesi Utara": "Sulut", "Nusa Tenggara Timur": "NTT",
+    "Nusa Tenggara Barat": "NTB", "Jawa Barat": "Jabar", "Jawa Tengah": "Jateng", "Jawa Timur": "Jatim",
+    "Maluku Utara": "Malut", "Papua Barat": "Pabar", "Yogyakarta": "DIY",
+    "Negeri Sembilan": ["N. Sembilan", "N9"], "Selangor & KL": "Selangor", "Terengganu": "T'ganu",
+  };
+  const NAME_PX = 12.5, VAL_PX = 12, HALO = 3.5;
+  const mctx = document.createElement("canvas").getContext("2d");
+  const measure = (txt, size, weight) => { mctx.font = `${weight} ${size}px "DM Sans", system-ui, sans-serif`; return mctx.measureText(txt).width; };
+  const hits = (a, b) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
+
+  // Every label = name + value in one style (dark text, white halo), so it reads the same on every fill.
+  // Big states are placed first; a label that would cover another is dropped rather than shown without its name.
+  function relabel() {
+    if (!gLabels || !view || !shown) return; gLabels.innerHTML = "";
     if (open) return;
-    for (const s of shown.list) {
-      const v = stats.get(s.n); if (!v) continue;
-      const wpx = ((s.b[2] - s.b[0]) * K) / unit, hpx = ((s.b[3] - s.b[1]) * K) / unit;
-      const full = s.n.length * 6.9 + 10;   // rough width of the name at 12px
-      if (hpx < 30 || wpx < 36) continue;
-      const showName = wpx >= full;
-      const dark = klass(v.mean, S_BREAKS) >= 3;
-      const t = el("text", { class: "sm-label", x: px(s.p[0]), y: py(s.p[1]), "font-size": 12 * unit, fill: dark ? "#fff" : "#18222e", stroke: dark ? "rgba(0,0,0,.35)" : "rgba(255,255,255,.85)", "stroke-width": 3 * unit }, gLabels);
-      if (showName) el("tspan", { x: px(s.p[0]), dy: 0 }, t).textContent = s.n;
-      const tv = el("tspan", { class: "v", x: px(s.p[0]), dy: (showName ? 13.5 : 4) * unit, "font-size": 11 * unit }, t); tv.textContent = Math.round(v.mean) + "%";
+    const W = svg.clientWidth, H = svg.clientHeight, unit = view[2] / W;
+    if (!W || !isFinite(unit) || unit <= 0) return;
+    const placed = [];
+    const cands = shown.list.filter((s) => stats.has(s.n))
+      .map((s) => ({ s, v: stats.get(s.n), area: (s.b[2] - s.b[0]) * (s.b[3] - s.b[1]) }))
+      .sort((a, b) => b.area - a.area);
+    for (const { s, v } of cands) {
+      const wpx = ((s.b[2] - s.b[0]) * K) / unit;
+      const sx = (px(s.p[0]) - view[0]) / unit, sy = (py(s.p[1]) - view[1]) / unit;
+      const pct = Math.round(v.mean) + "%";
+      const names = [s.n, ...[].concat(SHORT[s.n] || [])];
+      const hpx = ((s.b[3] - s.b[1]) * K) / unit, wpx2 = wpx;
+      // if the centre spot is taken, nudge the label a little, but keep it well inside the state's box
+      const nudges = [[0, 0], [0, 1], [0, -1], [1, 0], [-1, 0], [0, 2], [0, -2]].map(([a, b]) => [a * Math.min(40, wpx2 / 5), b * Math.min(18, hpx / 6)]);
+      let pick = null;
+      outer: for (let k = 0; k < names.length; k++) {
+        const w = Math.max(measure(names[k], NAME_PX, 700), measure(pct, VAL_PX, 600)) + HALO * 2;
+        const last = k === names.length - 1;
+        if (!last && w > wpx) continue;                      // full name too wide for the state: try the short one
+        if (last && w > wpx * 1.8) continue;                 // a tiny state at this zoom: skip it rather than cover its neighbours (zoom in or hover)
+        for (const [ox, oy] of nudges) {
+          const cx = sx + ox, cy = sy + oy;
+          const box = [cx - w / 2 - 2, cy - NAME_PX - 1, cx + w / 2 + 2, cy + VAL_PX + 5];
+          if (box[2] < 0 || box[0] > W || box[3] < 0 || box[1] > H) continue;   // off screen
+          if (placed.some((b) => hits(b, box))) continue;
+          pick = { name: names[k], box, ox, oy }; break outer;
+        }
+      }
+      if (!pick) continue;
+      placed.push(pick.box);
+      const X = px(s.p[0]) + pick.ox * unit, Y = py(s.p[1]) + pick.oy * unit;
+      const t = el("text", { class: "sm-label", x: X, y: Y - 2 * unit, "font-size": NAME_PX * unit, "stroke-width": HALO * unit }, gLabels);
+      el("tspan", { x: X, dy: 0 }, t).textContent = pick.name;
+      const tv = el("tspan", { class: "v", x: X, dy: (VAL_PX + 2) * unit, "font-size": VAL_PX * unit }, t); tv.textContent = pct;
     }
   }
 
@@ -287,6 +327,7 @@
   rank.addEventListener("pointerleave", () => { if (!open) highlight(null); });
   rank.addEventListener("click", (e) => { const li = e.target.closest("li"); if (!li) return; if (open === li.dataset.n) closeState(); else openState(li.dataset.n); });
   new ResizeObserver(() => relabel()).observe(svg);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => relabel());
 
   // ---- data ----
   fetch("assets/admin1.json").then((r) => r.json()).then((a) => { admin = a; }).catch(() => { note.textContent = "State borders could not load."; });

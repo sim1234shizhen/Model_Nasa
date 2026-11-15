@@ -27,7 +27,7 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body {
-  --rail-width: 68px;
+  --rail-width: 78px;
   margin: 0; min-height: 100vh; display: flex; flex-direction: column;
   padding-left: var(--rail-width);
   background: var(--page); color: var(--ink); font: 15px/1.55 var(--body);
@@ -53,9 +53,7 @@ main:focus, h1:focus { outline: none; }
 .brand {
   display: grid; justify-items: center; gap: 5px; padding: 3px 0 9px;
   color: var(--ink); font: 700 9.5px/1.15 var(--display); text-align: center; text-decoration: none;
-  letter-spacing: -.03em;
-  /* the rail is 68px, so a single-word product name has to be allowed to break */
-  overflow-wrap: anywhere; hyphens: auto;
+  letter-spacing: -.03em; white-space: nowrap;
 }
 .brand-mark {
   display: grid; place-items: center; width: 34px; height: 32px; background: none;
@@ -158,10 +156,10 @@ main:focus, h1:focus { outline: none; }
 .primary-nav a[aria-current="page"] { box-shadow: inset 2px 0 var(--s2); }
 
 @media (max-width: 650px) {
-  body { --rail-width: 60px; }
+  body { --rail-width: 72px; }
   .site-rail { padding-inline: 3px; }
   .brand { font-size: 9px; letter-spacing: -.05em; }
-  .primary-nav a { font-size: 10px; }
+  .primary-nav a { font-size: 9.5px; letter-spacing: -.02em; }
   .primary-nav a { min-height: 43px; padding-inline: 1px; }
   .rail-icon { font-size: 18px; }
 }

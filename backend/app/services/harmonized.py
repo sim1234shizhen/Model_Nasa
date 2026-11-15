@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from app.config import CACHE_DIR, CALIBRATION_CSV, CLEAN_CSV, HARMONIZED_CSV, REGIONS
+from app.config import CACHE_DIR, CALIBRATION_CSV, CLEAN_CSV, CLEAN_DIR, HARMONIZED_CSV, PROJECT_ROOT, REGIONS
 
 _cache: dict[Path, tuple[float, pd.DataFrame]] = {}
 _lock = threading.Lock()
@@ -87,11 +87,14 @@ def scope_regions(scope: str) -> list[str]:
 
 
 def monthly_series(scope: str) -> list[dict]:
-    h = harmonized()
-    d = h[h["region"].isin(scope_regions(scope))]
-    g = (d.groupby(["year", "month"], as_index=False)
-          .agg(harmonized=("harmonized_count", "sum"), modis=("MODIS", "sum"),
-               viirs=("VIIRS", "sum"), source=("source", "first")))
+    if is_world_scope(scope):
+        g = _world_frame(scope)
+    else:
+        h = harmonized()
+        d = h[h["region"].isin(scope_regions(scope))]
+        g = (d.groupby(["year", "month"], as_index=False)
+              .agg(harmonized=("harmonized_count", "sum"), modis=("MODIS", "sum"),
+                   viirs=("VIIRS", "sum"), source=("source", "first")))
     med = g.groupby("month")["harmonized"].transform("median")
     g["median"] = med
     g["anomaly"] = g["harmonized"] / med.replace(0, np.nan)
@@ -216,3 +219,77 @@ def hotspot_grid(scope: str, year: int, month: int, sensor: str, cell: float) ->
     ]
     return {"sensor": sensor, "cell": cell, "hotspots": int(len(sub)),
             "cell_days": int(g["days"].sum()), "cells": cells}
+
+
+# ---------------------------------------------------------------------------
+# Worldwide record. The dashboard can also show the whole world ("World") or any
+# country in Global_Dataset/harmonized_country_monthly.csv (233 countries, MODIS
+# scaled onto the VIIRS NOAA-20 level). Malaysia and Indonesia keep their
+# region-calibrated record above; every other country comes from this file.
+WORLD_SCOPE = "World"
+GLOBAL_CSV = PROJECT_ROOT / "Global_Dataset" / "harmonized_country_monthly.csv"
+WORLD_RAW_CSV = CLEAN_DIR / "world_monthly.csv"
+
+
+def _global() -> pd.DataFrame:
+    return _load(GLOBAL_CSV, pd.read_csv)
+
+
+def _world_raw() -> pd.DataFrame:
+    """Raw per-sensor fire cell-days, pivoted to one row per country-month."""
+    def read(path: Path) -> pd.DataFrame:
+        raw = pd.read_csv(path, usecols=["country", "year", "month", "sensor", "fire_cell_days"])
+        wide = raw.pivot_table(index=["country", "year", "month"], columns="sensor",
+                               values="fire_cell_days", aggfunc="sum").reset_index()
+        for sensor in ("MODIS", "VIIRS"):
+            if sensor not in wide:
+                wide[sensor] = np.nan
+        return wide[["country", "year", "month", "MODIS", "VIIRS"]]
+    return _load(WORLD_RAW_CSV, read)
+
+
+def world_countries() -> list[str]:
+    return sorted(_global()["country"].unique())
+
+
+def is_world_scope(scope: str) -> bool:
+    """True for 'World' and for countries outside the Malaysia/Indonesia record."""
+    if scope == WORLD_SCOPE:
+        return True
+    if not scope or scope == "All" or scope in REGIONS:
+        return False
+    if any(v["country"] == scope for v in REGIONS.values()):
+        return False
+    return scope in set(_global()["country"])
+
+
+def _world_frame(scope: str) -> pd.DataFrame:
+    g = _global()
+    d = g if scope == WORLD_SCOPE else g[g["country"] == scope]
+    if d.empty:
+        raise KeyError(scope)
+    out = (d.groupby(["year", "month"], as_index=False)
+             .agg(harmonized=("harmonized_count", "sum"), source=("source", "first")))
+    try:
+        raw = _world_raw()
+        raw = raw if scope == WORLD_SCOPE else raw[raw["country"] == scope]
+        sums = (raw.groupby(["year", "month"], as_index=False)
+                   .agg(modis=("MODIS", lambda s: s.sum(min_count=1)),
+                        viirs=("VIIRS", lambda s: s.sum(min_count=1))))
+        out = out.merge(sums, on=["year", "month"], how="left")
+    except FileNotFoundError:
+        out["modis"] = np.nan
+        out["viirs"] = np.nan
+    return out
+
+
+def world_country_months(year: int) -> list[dict]:
+    """Every country's harmonized cell-days for `year` and the year before."""
+    g = _global()
+    d = g[g["year"].isin([year - 1, year])]
+    return [
+        {"country": country, "months": [
+            {"year": int(r.year), "month": int(r.month), "harmonized": round(float(r.harmonized_count), 1)}
+            for r in rows.itertuples(index=False)]}
+        for country, rows in d.groupby("country", sort=True)
+    ]

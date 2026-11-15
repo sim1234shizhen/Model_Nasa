@@ -8,7 +8,7 @@ const VIIRS_START = 2012 * 12 + 2;
 const state = {
   scope: "All", year: 2019, month: 9, sensor: "auto",
   calMode: "activity", raw: true, log: false,
-  series: [], calib: [], regions: [], calibRegion: "Kalimantan",
+  series: [], calib: [], regions: [], calibRegion: "Kalimantan", worldCountries: [],
   oni: null, fc: { year: null, enso: "observed", data: null, prev: null },
 };
 
@@ -219,12 +219,53 @@ function searchableSelect(select, placeholder) {
 }
 
 /* ---------- filters ---------- */
-function buildFilters() {
+/* "World" and countries outside Malaysia/Indonesia come from the 233-country
+   record. Only the dashboard's calendar and history views can show them; the
+   hotspot map, forecast and haze pages need the regional Malaysia/Indonesia data. */
+const WORLD_SCOPE = "World";
+const regionalCountries = () => new Set(state.regions.map((r) => r.country));
+function isWorldScope(scope = state.scope) {
+  if (scope === WORLD_SCOPE) return true;
+  if (scope === "All" || regionalCountries().has(scope)) return false;
+  return !state.regions.some((r) => r.region === scope);
+}
+const worldScopesAllowed = () => route.page === "dashboard" && route.section !== "hotspots";
+let scopeOptionsWorld = null;
+
+function fillScopeOptions() {
+  const withWorld = worldScopesAllowed() && state.worldCountries.length > 0;
+  if (scopeOptionsWorld === withWorld) return;
+  scopeOptionsWorld = withWorld;
   const scope = $("#f-scope");
-  const opts = [["All", "All regions"], ["Malaysia", "Malaysia"], ["Indonesia", "Indonesia"]];
+  const opts = withWorld ? [[WORLD_SCOPE, "Worldwide (all countries)"]] : [];
+  opts.push(["All", "Malaysia & Indonesia"], ["Malaysia", "  Malaysia"], ["Indonesia", "  Indonesia"]);
   for (const r of state.regions) opts.push([r.region, `  ${r.region} (${r.country === "Malaysia" ? "MY" : "ID"})`]);
+  if (withWorld) {
+    const regional = regionalCountries();
+    for (const c of state.worldCountries) if (!regional.has(c)) opts.push([c, c]);
+  }
   scope.innerHTML = opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join("");
   scope.value = state.scope;
+}
+
+/* Called on every route change: offer world scopes only where they work, and
+   default the dashboard to the whole world the first time it is opened. */
+let dashboardScopeDefaulted = false;
+function syncScopeForRoute() {
+  if (!ready) return;
+  let next = null;
+  if (route.page === "dashboard" && !dashboardScopeDefaulted && state.worldCountries.length) {
+    dashboardScopeDefaulted = true;
+    if (state.scope === "All") next = WORLD_SCOPE;
+  }
+  if (!worldScopesAllowed() && isWorldScope()) next = "All";
+  fillScopeOptions();
+  if (next && next !== state.scope) changeScope(next);
+}
+
+function buildFilters() {
+  const scope = $("#f-scope");
+  fillScopeOptions();
   searchableSelect(scope, "Type a region or country");
 
   const years = [...new Set(state.series.map((d) => d.year))];
@@ -343,6 +384,7 @@ async function changeScope(scope) {
     return;
   }
   state.scope = scope;
+  $("#f-scope").value = scope;
   setStatus("");
   renderView();
 }
@@ -357,14 +399,14 @@ function loadDashboardSummary(jumpTarget = null) {
     state.month = latest.month;
     syncFilters();
   }
-  dashboardModule ??= import("./dashboard.js?v=watchlist-add").catch(() => {
+  dashboardModule ??= import("./dashboard.js?v=world-dashboard").catch(() => {
     dashboardModule = null;
     if (route.page === "dashboard") setStatus("The dashboard summary could not load.", true);
   });
   dashboardModule.then(async (module) => {
     if (!module || route.page !== "dashboard") return;
     await module.renderDashboard({
-      series: state.series, regions: state.regions, scope: state.scope,
+      series: state.series, regions: state.regions, scope: state.scope, world: isWorldScope(),
       year: state.year, month: state.month, getJSON, setMonth: (month) => setYM(state.year, month),
       isVisible: () => route.page === "dashboard", tokens: tokens(), chartTooltip,
     });
@@ -395,7 +437,10 @@ function renderTiles() {
   const regs = scopeRegionNames();
   const errs = state.calib.filter((c) => regs.includes(c.region)).map((c) => c.median_abs_pct_err_loyo);
   const errTxt = errs.length === 1 ? `±${errs[0]}%` : `±${Math.min(...errs)}–${Math.max(...errs)}%`;
-  const src = state.year > 2012 ? "VIIRS observed" : state.year < 2012 ? "MODIS, calibrated" : "MODIS Jan · VIIRS Feb–Dec";
+  const world = isWorldScope();
+  const worldSource = yr.find((d) => d.source)?.source || "";
+  const src = world ? (worldSource.startsWith("VIIRS") ? "VIIRS observed" : "MODIS, scaled to VIIRS")
+    : state.year > 2012 ? "VIIRS observed" : state.year < 2012 ? "MODIS, calibrated" : "MODIS Jan · VIIRS Feb–Dec";
 
   const tiles = [
     { k: `Fire cell-days in ${state.year}`, v: nf.format(total),
@@ -403,13 +448,16 @@ function renderTiles() {
     { k: `Peak month of ${state.year}`, v: peak ? MONTHS_LONG[peak.month - 1] : "–",
       d: peak ? `${nf.format(peak.harmonized)} cell-days${peak.anomaly != null ? ` · ${peak.anomaly.toFixed(1)}× typical` : ""}` : "" },
     { k: "Worst year, 2003–2025", v: String(recY), d: `${nf.format(recV)} cell-days · ${(recV / typical).toFixed(1)}× typical` },
-    { k: `Data for ${state.year}`, v: src, d: `Calibration error ${errTxt} per month (validated)` },
+    { k: `Data for ${state.year}`, v: src, d: world
+      ? "Worldwide record · VIIRS NOAA-20 scale, 233 countries"
+      : `Calibration error ${errTxt} per month (validated)` },
   ];
   $("#tiles").innerHTML = tiles.map((t) =>
     `<div class="tile"><div class="k">${esc(t.k)}</div><div class="v">${esc(t.v)}</div><div class="d">${esc(t.d)}</div></div>`).join("");
 }
 
 function scopeRegionNames() {
+  if (isWorldScope()) return [];
   if (state.scope === "All") return state.regions.map((r) => r.region);
   const single = state.regions.find((r) => r.region === state.scope);
   if (single) return [single.region];
@@ -1738,6 +1786,7 @@ function updateRoute(moveFocus = false) {
       view.querySelector("h1").focus({ preventScroll: true });
     }
   }
+  syncScopeForRoute();
   if (ready && changedView) renderView(jumpTarget);
 }
 
@@ -1799,11 +1848,13 @@ function renderView(jumpTarget = dashboardPanel(route.panel)) {
 async function boot() {
   setStatus("Loading…");
   try {
-    const [regions, calib, h, oni] = await Promise.all([
+    const [regions, calib, h, oni, areas] = await Promise.all([
       getJSON("/regions"), getJSON("/calibration"), getJSON(`/harmonized?scope=${encodeURIComponent(state.scope)}`),
       getJSON("/enso").catch(() => ({ available: false })),
+      getJSON("/harmonized/areas").catch(() => ({ countries: [] })),
     ]);
     state.regions = regions;
+    state.worldCountries = areas.countries || [];
     state.calib = calib;
     state.series = allRegionsSeries = h.series;
     state.oni = oni;
@@ -1837,6 +1888,7 @@ async function boot() {
   cal.addEventListener("focusout", hideTip);
 
   ready = true;
+  syncScopeForRoute();
   renderView(dashboardPanel(route.panel));
 }
 
